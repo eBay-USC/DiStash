@@ -81,6 +81,7 @@ public:
 	Optional<Version> getCachedReadVersion() const override { return tr.getCachedReadVersion(); }
 	Future<Optional<Value>> get(const Key& key, Snapshot = Snapshot::False) override;
 	Future<Key> getKey(const KeySelector& key, Snapshot = Snapshot::False) override;
+	Future<RangeResult> getMultiValues(const Standalone<VectorRef<KeyRef>> &keys, Snapshot = Snapshot::False,LoadBalancePolicy policy  = FIRST) override;
 	Future<RangeResult> getRange(const KeySelector& begin,
 	                             const KeySelector& end,
 	                             int limit,

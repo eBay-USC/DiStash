@@ -479,6 +479,20 @@ ThreadFuture<RangeResult> ThreadSafeTransaction::getRange(const KeySelectorRef& 
 	});
 }
 
+ThreadFuture<RangeResult>ThreadSafeTransaction::getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot,int policy){
+	// printf("Keys0: %s\n", keys[0].toString().c_str());
+	ISingleThreadTransaction* tr = this->tr;
+	printf("using %d ploicy\n",policy);
+	LoadBalancePolicy p = static_cast<LoadBalancePolicy>(policy);
+
+	// printf("inside ThreadSafeTransaction  line 483");
+	return onMainThread([tr,keys,snapshot,p]()-> Future<RangeResult> {
+		tr->checkDeferredError();
+		return tr->getMultiValues(keys, Snapshot{ snapshot },p);
+		// return RangeResult();
+	});
+}
+
 ThreadFuture<RangeResult> ThreadSafeTransaction::getRange(const KeySelectorRef& begin,
                                                           const KeySelectorRef& end,
                                                           GetRangeLimits limits,

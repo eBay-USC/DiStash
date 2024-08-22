@@ -667,6 +667,8 @@ public:
 			    .detail("Range", KeyRangeRef(range.begin, range.end))
 			    .detail("Config", it->value());
 		}
+		customBoundaries.push_back("\x00"_sr);
+		customBoundaries.push_back("\x01"_sr);
 
 		state int shard = 0;
 		state int customBoundary = 0;

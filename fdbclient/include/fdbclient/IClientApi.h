@@ -64,6 +64,9 @@ public:
 	                                           GetRangeLimits limits,
 	                                           bool snapshot = false,
 	                                           bool reverse = false) = 0;
+	virtual ThreadFuture<RangeResult> getMulti(const Standalone<VectorRef<StringRef>> &keys,
+												bool snapshot = false, 
+												int policy=0) = 0;
 	virtual ThreadFuture<MappedRangeResult> getMappedRange(const KeySelectorRef& begin,
 	                                                       const KeySelectorRef& end,
 	                                                       const StringRef& mapper,

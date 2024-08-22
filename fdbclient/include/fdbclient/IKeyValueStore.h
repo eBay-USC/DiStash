@@ -97,6 +97,8 @@ public:
 	// Returns the amount of free and total space for this store, in bytes
 	virtual StorageBytes getStorageBytes() const = 0;
 
+	virtual CacheStatus getCacheStatus()  {return CacheStatus();}
+
 	virtual void logRecentRocksDBBackgroundWorkStats(UID ssId, std::string logReason) { throw not_implemented(); }
 
 	virtual void resyncLog() {}
@@ -180,7 +182,18 @@ extern IKeyValueStore* keyValueStoreLogSystem(class IDiskQueue* queue,
                                               bool replaceContent,
                                               bool exactRecovery,
                                               bool enableEncryption);
-
+extern IKeyValueStore* keyValueStoreMemcached(NetworkAddress address, 
+                                                KeyValueStoreType storeType, 
+                                                UID logID);
+extern IKeyValueStore* keyValueStoreRedis(KeyValueStoreType storeType, 
+                                                UID logID);
+extern IKeyValueStore* keyValueStoreCache(KeyValueStoreType storeType,
+                            std::string const& filename,
+                            UID logID,
+                            int64_t memoryLimit,
+                            CachePolicy cachePolicy);
+extern IKeyValueStore* keyValueStoreCache(IKeyValueStore * cache);
+extern IKeyValueStore* keyValueStoreHybrid(IKeyValueStore* sqlite, IKeyValueStore* cache);
 extern IKeyValueStore* openRemoteKVStore(KeyValueStoreType storeType,
                                          std::string const& filename,
                                          UID logID,
@@ -197,7 +210,9 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
                             bool openRemotely = false,
                             Reference<AsyncVar<struct ServerDBInfo> const> db = {},
                             Optional<EncryptionAtRestMode> encryptionMode = {},
-                            int64_t pageCacheBytes = 0);
+                            int64_t pageCacheBytes = 0,
+							KeyValueStoreType cacheType = KeyValueStoreType::NONE,
+                            CachePolicy cachePolicy = CachePolicy::NONE);
 
 void GenerateIOLogChecksumFile(std::string filename);
 Future<Void> KVFileCheck(std::string const& filename, bool const& integrity);

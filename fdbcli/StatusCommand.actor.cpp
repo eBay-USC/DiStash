@@ -1219,6 +1219,24 @@ void printStatus(StatusObjectReader statusObj,
 				}
 			}
 
+			// cache info 
+			outputString +="\n\nCache Type: ";
+			try {
+				for (auto proc : processesMap.obj()) {
+					std::string line;
+					StatusObjectReader procObj(proc.second);
+					std::string address;
+					procObj.get("address", address);
+					std::string cacheType;
+					procObj.get("cache_type", cacheType);
+					line = format("\n  %s : %-22s", address.c_str(),cacheType.c_str());
+					outputString+=line;
+				}
+			}catch(std::runtime_error&){
+				outputString = outputStringCache;
+				outputString += "\n  Unable to get cache type.";
+			}
+
 			// client time
 			std::string clientTime = getDateInfoString(statusObjClient, "timestamp");
 			if (clientTime != "") {

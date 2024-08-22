@@ -46,6 +46,7 @@
 #undef JNIEXPORT
 #define JNIEXPORT __attribute__((visibility("default")))
 #endif
+#include <vector>
 
 static JavaVM* g_jvm = nullptr;
 static thread_local JNIEnv* g_thread_jenv =
@@ -1600,6 +1601,46 @@ JNIEXPORT jlong JNICALL Java_com_apple_foundationdb_FDBTransaction_Transaction_1
 	return (jlong)f;
 }
 
+JNIEXPORT jlong JNICALL Java_com_apple_foundationdb_FDBTransaction_Transaction_1getMulti
+    (JNIEnv * jenv, jobject, jlong tPtr, jobjectArray keys, jboolean snapshot,jint policy){
+	if (!tPtr ) {
+		throwParamNotNull(jenv);
+		return 0;
+	}
+	FDBTransaction* tr = (FDBTransaction*)tPtr;
+	 
+	int *sizes;
+	
+	jsize byteArrLength = jenv->GetArrayLength(keys);
+	const unsigned char** c_keys = new const unsigned char*[byteArrLength];
+	 sizes = new int[byteArrLength];
+	// // get data from jobject to a vector
+	for(int i = 0;i<byteArrLength;i++){
+		jbyteArray byteArray = (jbyteArray) jenv->GetObjectArrayElement(keys, i);
+		jsize keyLength = jenv->GetArrayLength(byteArray);
+		unsigned char* barr = (unsigned char*)jenv->GetByteArrayElements(byteArray, JNI_NULL);
+		c_keys[i]=barr;
+		sizes[i] = keyLength;
+		// printf("Content: %d %d\n", *barr,keyLength);
+	}
+	// //TODO call transaction
+	FDBFuture* f = fdb_transaction_get_multi(tr,(const uint8_t**)c_keys,sizes,byteArrLength,snapshot,policy);
+
+	// for(int i = 0;i<byteArrLength;i++){
+	// 	uint8_t *barr = c_keys[i];
+	// 	// printf("Content: %d %d\n", *barr,sizes[i]);
+	// }
+
+
+	// free memory created by GetByteArrayElements()
+	for(int i = 0;i<byteArrLength;i++){
+		jbyteArray byteArray = (jbyteArray) jenv->GetObjectArrayElement(keys, i);
+		const unsigned char *barr = c_keys[i];
+		jenv->ReleaseByteArrayElements(byteArray, (jbyte*)barr, JNI_ABORT);
+	}
+	 return (jlong)f;
+}
+
 JNIEXPORT jlong JNICALL Java_com_apple_foundationdb_FDBTransaction_Transaction_1getMappedRange(JNIEnv* jenv,
                                                                                                jobject,
                                                                                                jlong tPtr,
@@ -1927,11 +1968,13 @@ JNIEXPORT void JNICALL Java_com_apple_foundationdb_FDBTransaction_Transaction_1s
                                                                                    jobject,
                                                                                    jlong tPtr,
                                                                                    jbyteArray keyBytes,
-                                                                                   jbyteArray valueBytes) {
+                                                                                   jbyteArray valueBytes,
+																				   jlong cost) {
 	if (!tPtr || !keyBytes || !valueBytes) {
 		throwParamNotNull(jenv);
 		return;
 	}
+	uint64_t c = (uint64_t)cost;
 	FDBTransaction* tr = (FDBTransaction*)tPtr;
 
 	uint8_t* barrKey = (uint8_t*)jenv->GetByteArrayElements(keyBytes, JNI_NULL);
@@ -1949,7 +1992,7 @@ JNIEXPORT void JNICALL Java_com_apple_foundationdb_FDBTransaction_Transaction_1s
 		return;
 	}
 
-	fdb_transaction_set(tr, barrKey, jenv->GetArrayLength(keyBytes), barrValue, jenv->GetArrayLength(valueBytes));
+	fdb_transaction_set_with_c(tr, barrKey, jenv->GetArrayLength(keyBytes), barrValue, jenv->GetArrayLength(valueBytes),cost);
 	jenv->ReleaseByteArrayElements(keyBytes, (jbyte*)barrKey, JNI_ABORT);
 	jenv->ReleaseByteArrayElements(valueBytes, (jbyte*)barrValue, JNI_ABORT);
 }

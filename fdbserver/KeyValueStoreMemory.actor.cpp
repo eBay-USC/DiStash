@@ -439,7 +439,7 @@ private:
 				data.erase(data.lower_bound(o->p1), data.end());
 			} else
 				ASSERT(false);
-			if (log)
+			if (log && !o->p1.startsWith("\x00"_sr))
 				log_location = log_op(o->op, o->p1, o->p2);
 		}
 		if (sequential) {
@@ -1108,7 +1108,7 @@ IKeyValueStore* keyValueStoreMemory(std::string const& basename,
 		    log, Reference<AsyncVar<ServerDBInfo> const>(), logID, memoryLimit, storeType, false, false, false, false);
 	} else {
 		return new KeyValueStoreMemory<IKeyValueContainer>(
-		    log, Reference<AsyncVar<ServerDBInfo> const>(), logID, memoryLimit, storeType, false, false, false, false);
+		    log, Reference<AsyncVar<ServerDBInfo> const>(), logID, memoryLimit, storeType, true, false, false, false);
 	}
 }
 

@@ -47,6 +47,7 @@
 #include "flow/ProtocolVersion.h"
 #include "flow/UnitTest.h"
 #include "flow/Trace.h"
+#include "stdio.h"
 
 #ifdef __unixish__
 #include <fcntl.h>
@@ -167,6 +168,28 @@ ThreadFuture<RangeResult> DLTransaction::getRange(const KeyRangeRef& keys,
                                                   bool snapshot,
                                                   bool reverse) {
 	return getRange(firstGreaterOrEqual(keys.begin), firstGreaterOrEqual(keys.end), limits, snapshot, reverse);
+}
+
+ThreadFuture<RangeResult> DLTransaction::getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot,int policy){
+	// printf("inside DLTransaction line 1078\n");
+	// return RangeResult();
+	const uint8_t** newKey = new const uint8_t*[keys.size()];
+	int * length = new int [keys.size()];
+	for(int i=0;i<keys.size();i++) {
+		newKey[i] = (const uint8_t*)keys[i].begin();
+		length[i] = keys[i].size();
+	}
+	FdbCApi::FDBFuture* f = api->transactionGetMulti(tr, newKey, length, keys.size(), snapshot,policy);
+	return toThreadFuture<RangeResult>(api, f, [](FdbCApi::FDBFuture* f, FdbCApi* api) {
+		const FdbCApi::FDBKeyValue* kvs;
+		int count;
+		FdbCApi::fdb_bool_t more;
+		FdbCApi::fdb_error_t error = api->futureGetKeyValueArray(f, &kvs, &count, &more);
+		ASSERT(!error);
+
+		// The memory for this is stored in the FDBFuture and is released when the future gets destroyed
+		return RangeResult(RangeResultRef(VectorRef<KeyValueRef>((KeyValueRef*)kvs, count), more), Arena());
+	});
 }
 
 ThreadFuture<MappedRangeResult> DLTransaction::getMappedRange(const KeySelectorRef& begin,
@@ -1118,6 +1141,7 @@ void DLApi::init() {
 	                   "fdb_transaction_get_addresses_for_key",
 	                   headerVersion >= 0);
 	loadClientFunction(&api->transactionGetRange, lib, fdbCPath, "fdb_transaction_get_range", headerVersion >= 0);
+	loadClientFunction(&api->transactionGetMulti,lib,fdbCPath, "fdb_transaction_get_multi",headerVersion>=0);
 	loadClientFunction(
 	    &api->transactionGetMappedRange, lib, fdbCPath, "fdb_transaction_get_mapped_range", headerVersion >= 710);
 	loadClientFunction(
@@ -1522,6 +1546,15 @@ ThreadFuture<RangeResult> MultiVersionTransaction::getRange(const KeyRangeRef& k
 	                                     std::forward<GetRangeLimits>(limits),
 	                                     std::forward<bool>(snapshot),
 	                                     std::forward<bool>(reverse));
+}
+
+ThreadFuture<RangeResult> MultiVersionTransaction::getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot,int policy){
+	printf("inside multiversion line 1535\n");
+	return executeOperation<RangeResult>(&ITransaction::getMulti,
+										keys,
+	 									std::forward<bool>(snapshot),
+										std::forward<int>(policy)
+										);
 }
 
 ThreadFuture<MappedRangeResult> MultiVersionTransaction::getMappedRange(const KeySelectorRef& begin,

@@ -126,6 +126,22 @@ const char* TSS_mismatchTraceName(const GetKeyValuesRequest& req) {
 	return "TSSMismatchGetKeyValues";
 }
 
+//mGet
+template <>
+bool TSS_doCompare(const GetMultiValuesReply& src, const GetMultiValuesReply& tss) {
+	return src.more == tss.more && src.data == tss.data;
+}
+
+template <>
+const char* TSS_mismatchTraceName(const GetMultiValuesRequest& req) {
+	return "TSSMismatchGetMultiValues";
+}
+
+template <>
+void TSS_traceMismatch(TraceEvent& event, const GetMultiValuesRequest& req, const GetMultiValuesReply& src, const GetMultiValuesReply& tss) {
+	;
+}
+
 static void traceKeyValuesSummary(TraceEvent& event,
                                   const KeySelectorRef& begin,
                                   const KeySelectorRef& end,
@@ -441,6 +457,12 @@ void TSSMetrics::recordLatency(const GetKeyValuesRequest& req, double ssLatency,
 
 template <>
 void TSSMetrics::recordLatency(const GetMappedKeyValuesRequest& req, double ssLatency, double tssLatency) {
+	SSgetMappedKeyValuesLatency.addSample(ssLatency);
+	TSSgetMappedKeyValuesLatency.addSample(tssLatency);
+}
+
+template <>
+void TSSMetrics::recordLatency(const GetMultiValuesRequest& req, double ssLatency, double tssLatency) {
 	SSgetMappedKeyValuesLatency.addSample(ssLatency);
 	TSSgetMappedKeyValuesLatency.addSample(tssLatency);
 }

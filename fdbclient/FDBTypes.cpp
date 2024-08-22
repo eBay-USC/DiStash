@@ -230,6 +230,12 @@ std::string KeyValueStoreType::getStoreTypeStr(const StoreType& storeType) {
 		return "memory-radixtree-beta";
 	case NONE:
 		return "none";
+	case Memcached:
+		return "memcached";
+	case HYBRID:
+		return "hybrid";
+	case Cache:
+		return "cache";
 	default:
 		return "unknown";
 	}
@@ -246,6 +252,9 @@ KeyValueStoreType KeyValueStoreType::fromString(const std::string& str) {
 		                                              { "ssd-sharded-rocksdb", SSD_SHARDED_ROCKSDB },
 		                                              { "memory", MEMORY },
 		                                              { "memory-radixtree-beta", MEMORY_RADIXTREE },
+													  { "memcached", Memcached},
+													  { "cache", Cache},
+													  { "hybrid", HYBRID},
 		                                              { "none", NONE } };
 	auto it = names.find(str);
 	if (it == names.end()) {

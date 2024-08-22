@@ -691,6 +691,7 @@ public:
 
 	Int64MetricHandle getValueSubmitted;
 	EventMetricHandle<GetValueComplete> getValueCompleted;
+	EventMetricHandle<GetValueComplete> getMultiValuesCompleted;
 
 	Reference<AsyncVar<ClientDBInfo>> clientInfo;
 	Future<Void> clientInfoMonitor;

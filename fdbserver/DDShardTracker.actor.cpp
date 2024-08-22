@@ -906,12 +906,18 @@ static bool shardMergeFeasible(DataDistributionTracker* self, KeyRange const& ke
 	return true;
 }
 
+const KeyRangeRef cacheKeys("\x00"_sr, "\x01"_sr);
+
 static bool shardForwardMergeFeasible(DataDistributionTracker* self, KeyRange const& keys, KeyRangeRef nextRange) {
 	if (keys.end == allKeys.end) {
 		return false;
 	}
 
 	if (self->userRangeConfig->rangeContaining(keys.begin)->range().end < nextRange.end) {
+		return false;
+	}
+
+	if(cacheKeys.contains(keys) != cacheKeys.contains(nextRange)) {
 		return false;
 	}
 
@@ -924,6 +930,10 @@ static bool shardBackwardMergeFeasible(DataDistributionTracker* self, KeyRange c
 	}
 
 	if (self->userRangeConfig->rangeContaining(keys.begin)->range().begin > prevRange.begin) {
+		return false;
+	}
+
+	if(cacheKeys.contains(keys) != cacheKeys.contains(prevRange)) {
 		return false;
 	}
 
@@ -1267,12 +1277,17 @@ ACTOR Future<Void> trackInitialShards(DataDistributionTracker* self, Reference<I
 	for (auto it : self->userRangeConfig->ranges()) {
 		customBoundaries.push_back(it->range().begin);
 	}
+	customBoundaries.push_back("\x00"_sr);
+	customBoundaries.push_back("\x01"_sr);
 
 	state int s;
 	state int customBoundary = 0;
 	for (s = 0; s < initData->shards.size() - 1; s++) {
 		Key beginKey = initData->shards[s].key;
 		Key endKey = initData->shards[s + 1].key;
+		TraceEvent("TrackInitialShards", self->distributorId)
+		.detail("Begin", beginKey.toString())
+		.detail("End", endKey.toString());
 		while (customBoundary < customBoundaries.size() && customBoundaries[customBoundary] <= beginKey) {
 			customBoundary++;
 		}

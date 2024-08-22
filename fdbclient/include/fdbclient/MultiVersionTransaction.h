@@ -314,6 +314,13 @@ struct FdbCApi : public ThreadSafeReferenceCounted<FdbCApi> {
 	                                  int iteration,
 	                                  fdb_bool_t snapshot,
 	                                  fdb_bool_t reverse);
+	FDBFuture* (*transactionGetMulti)(FDBTransaction* tr,
+									  const uint8_t**key,
+									  int*single_key_length,
+									  uint64_t length,
+									  fdb_bool_t snapshot,
+									  int policy
+									  );
 	FDBFuture* (*transactionGetMappedRange)(FDBTransaction* tr,
 	                                        uint8_t const* beginKeyName,
 	                                        int beginKeyNameLength,
@@ -469,6 +476,7 @@ public:
 
 	ThreadFuture<Optional<Value>> get(const KeyRef& key, bool snapshot = false) override;
 	ThreadFuture<Key> getKey(const KeySelectorRef& key, bool snapshot = false) override;
+	ThreadFuture<RangeResult> getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot=false,int policy=0) override;
 	ThreadFuture<RangeResult> getRange(const KeySelectorRef& begin,
 	                                   const KeySelectorRef& end,
 	                                   int limit,
@@ -487,6 +495,7 @@ public:
 	                                   GetRangeLimits limits,
 	                                   bool snapshot = false,
 	                                   bool reverse = false) override;
+	ThreadFuture<RangeResult> getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot=false,int policy=0) override;
 	ThreadFuture<MappedRangeResult> getMappedRange(const KeySelectorRef& begin,
 	                                               const KeySelectorRef& end,
 	                                               const StringRef& mapper,

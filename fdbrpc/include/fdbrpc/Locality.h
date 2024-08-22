@@ -52,6 +52,8 @@ struct ProcessClass {
 		ConsistencyScanClass,
 		BlobMigratorClass,
 		SimHTTPServerClass,
+		PersisitentStorageClass,
+		TransientStorageClass,
 		InvalidClass = -1
 	};
 
@@ -156,6 +158,9 @@ public:
 		else if (s=="backup") _class = BackupClass;
 		else if (s=="encrypt_key_proxy") _class = EncryptKeyProxyClass;
 		else if (s=="sim_http_server") _class = SimHTTPServerClass;
+		else if (s=="persistent_storage") _class = PersisitentStorageClass;
+		else if (s=="transient_storage") _class = TransientStorageClass;
+		else if (s=="cache") _class = TransientStorageClass;
 		else _class = InvalidClass;
 	}
 
@@ -188,6 +193,9 @@ public:
 		else if (classStr=="backup") _class = BackupClass;
 		else if (classStr=="encrypt_key_proxy") _class = EncryptKeyProxyClass;
 		else if (classStr=="sim_http_server") _class = SimHTTPServerClass;
+		else if (classStr=="persistent_storage") _class = PersisitentStorageClass;
+		else if (classStr=="transient_storage") _class = TransientStorageClass;
+		else if (classStr=="cache") _class = TransientStorageClass;
 		else _class = InvalidClass;
 
 		if (sourceStr=="command_line") _source = CommandLineSource;
@@ -230,6 +238,8 @@ public:
 			case BackupClass: return "backup";
 			case EncryptKeyProxyClass: return "encrypt_key_proxy";
 			case SimHTTPServerClass: return "sim_http_server";
+			case PersisitentStorageClass: return "persistent_storage";
+			case TransientStorageClass: return "transient_storage";
 			default: return "invalid";
 		}
 	}

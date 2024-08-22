@@ -60,6 +60,7 @@ public:
 	virtual Optional<Version> getCachedReadVersion() const = 0;
 	virtual Future<Optional<Value>> get(const Key& key, Snapshot = Snapshot::False) = 0;
 	virtual Future<Key> getKey(const KeySelector& key, Snapshot = Snapshot::False) = 0;
+	virtual Future<RangeResult> getMultiValues(const Standalone<VectorRef<StringRef>> &keys, Snapshot = Snapshot::False,LoadBalancePolicy policy = FIRST) { return RangeResult();}
 	virtual Future<RangeResult> getRange(const KeySelector& begin,
 	                                     const KeySelector& end,
 	                                     int limit,

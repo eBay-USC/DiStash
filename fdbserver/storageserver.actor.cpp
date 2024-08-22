@@ -536,7 +536,7 @@ public:
 };
 
 struct StorageServerDisk {
-	explicit StorageServerDisk(struct StorageServer* data, IKeyValueStore* storage) : data(data), storage(storage) {}
+	explicit StorageServerDisk(struct StorageServer* data, IKeyValueStore* storage, KeyValueStoreType cacheType, CachePolicy cachePolicy) : data(data), storage(storage) {}
 
 	IKeyValueStore* getKeyValueStore() const { return this->storage; }
 
@@ -564,7 +564,7 @@ struct StorageServerDisk {
 	void markRangeAsActive(KeyRangeRef range) { storage->markRangeAsActive(range); }
 
 	Future<Void> replaceRange(KeyRange range, Standalone<VectorRef<KeyValueRef>> data) {
-		return storage->replaceRange(range, data);
+		return this->storage->replaceRange(range, data);
 	}
 
 	void persistRangeMapping(KeyRangeRef range, bool isAdd) { storage->persistRangeMapping(range, isAdd); }
@@ -648,6 +648,11 @@ private:
 			return r[0].key;
 		else
 			return range.end;
+	}
+
+	ACTOR static Future<Void> replaceRanges_impl(StorageServerDisk* dsik, KeyRange range, Standalone<VectorRef<KeyValueRef>> data) {
+		wait(dsik->storage->replaceRange(range, data));
+		return Void();
 	}
 };
 
@@ -1304,6 +1309,8 @@ public:
 	Optional<UID> ssPairID; // if this server is an ss, this is the id of its (tss) pair
 	Optional<double> tssFaultInjectTime;
 	bool tssInQuarantine;
+	KeyValueStoreType cacheType;
+	CachePolicy cachePolicy;
 
 	Key sk;
 	Reference<AsyncVar<ServerDBInfo> const> db;
@@ -1472,6 +1479,10 @@ public:
 		// If set is within a range of clear, the clear is split. It's tracking the number of splits, the split could be
 		// expensive.
 		Counter pTreeClearSplits;
+		
+		Counter multiGet, multiGetKeys;
+		LatencySample multiGetLatencySample;
+		LatencySample multiGetKeyNumSample;
 
 		LatencySample readLatencySample;
 		LatencySample readKeyLatencySample;
@@ -1523,6 +1534,15 @@ public:
 		    pTreeSets("PTreeSets", cc), pTreeClears("PTreeClears", cc), pTreeClearSplits("PTreeClearSplits", cc),
 		    changeServerKeysAssigned("ChangeServerKeysAssigned", cc),
 		    changeServerKeysUnassigned("ChangeServerKeysUnassigned", cc),
+			multiGet("MultiGet", cc), multiGetKeys("MultiGetKeys",cc),
+			multiGetLatencySample("MultiGetLatencyMetrics",
+		                      self->thisServerID,
+		                      SERVER_KNOBS->LATENCY_METRICS_LOGGING_INTERVAL,
+		                      SERVER_KNOBS->LATENCY_SKETCH_ACCURACY),
+			multiGetKeyNumSample("MultiGetKeyNumMetrics",
+		                      self->thisServerID,
+		                      SERVER_KNOBS->LATENCY_METRICS_LOGGING_INTERVAL,
+		                      0.0001),
 		    readLatencySample("ReadLatencyMetrics",
 		                      self->thisServerID,
 		                      SERVER_KNOBS->LATENCY_METRICS_LOGGING_INTERVAL,
@@ -1621,7 +1641,9 @@ public:
 
 	StorageServer(IKeyValueStore* storage,
 	              Reference<AsyncVar<ServerDBInfo> const> const& db,
-	              StorageServerInterface const& ssi)
+	              StorageServerInterface const& ssi,
+				  KeyValueStoreType cacheType,
+				  CachePolicy cachePolicy)
 	  : shardAware(false), tlogCursorReadsLatencyHistogram(Histogram::getHistogram(STORAGESERVER_HISTOGRAM_GROUP,
 	                                                                               TLOG_CURSOR_READS_LATENCY_HISTOGRAM,
 	                                                                               Histogram::Unit::milliseconds)),
@@ -1656,7 +1678,7 @@ public:
 	                                                              SS_READ_RANGE_KV_PAIRS_RETURNED_HISTOGRAM,
 	                                                              Histogram::Unit::bytes)),
 	    tag(invalidTag), poppedAllAfter(std::numeric_limits<Version>::max()), cpuUsage(0.0), diskUsage(0.0),
-	    storage(this, storage), shardChangeCounter(0), lastTLogVersion(0), lastVersionWithData(0), restoredVersion(0),
+	    storage(this, storage, cacheType, cachePolicy), shardChangeCounter(0), lastTLogVersion(0), lastVersionWithData(0), restoredVersion(0),
 	    prevVersion(0), rebootAfterDurableVersion(std::numeric_limits<Version>::max()),
 	    primaryLocality(tagLocalityInvalid), knownCommittedVersion(0), versionLag(0), logProtocol(0),
 	    thisServerID(ssi.id()), tssInQuarantine(false), db(db), actors(false),
@@ -1675,7 +1697,8 @@ public:
 	    lastDurableVersionEBrake(0), maxQueryQueue(0), transactionTagCounter(ssi.id()),
 	    busiestWriteTagContext(ssi.id()), counters(this),
 	    storageServerSourceTLogIDEventHolder(
-	        makeReference<EventCacheHolder>(ssi.id().toString() + "/StorageServerSourceTLogID")) {
+	        makeReference<EventCacheHolder>(ssi.id().toString() + "/StorageServerSourceTLogID")),
+		 cacheType(cacheType), cachePolicy(cachePolicy)	 {
 		readPriorityRanks = parseStringToVector<int>(SERVER_KNOBS->STORAGESERVER_READTYPE_PRIORITY_MAP, ',');
 		ASSERT(readPriorityRanks.size() > (int)ReadType::MAX);
 		version.initMetric("StorageServer.Version"_sr, counters.cc.getId());
@@ -2456,7 +2479,10 @@ ACTOR Future<Void> getValueQ(StorageServer* data, GetValueRequest req) {
 		state int path = 0;
 		auto i = data->data().at(version).lastLessOrEqual(req.key);
 		if (i && i->isValue() && i.key() == req.key) {
-			v = (Value)i->getValue();
+			Value tmp = i->getValue();
+			if(i.key().startsWith("\x00"_sr) && tmp.startsWith(StringRef("\x00__cost"_sr))) {
+				v = tmp.substr(15);
+			} else v = tmp;
 			path = 1;
 		} else if (!i || !i->isClearTo() || i->getEndKey() <= req.key) {
 			path = 2;
@@ -4513,6 +4539,163 @@ KeyRange getShardKeyRange(StorageServer* data, const KeySelectorRef& sel)
 		}
 	}
 	return KeyRangeRef(begin, end);
+}
+
+ACTOR Future<Optional<Value>> getSingleValue(StorageServer* data, Optional<ReadOptions> options, Version version, Key key) {
+	// state Standalone<KeyValueErrorRef> singleV;
+	// singleV.error = Error(invalid_error_code);
+	// singleV.key = key;
+	if (!data->shards[key]->isReadable()) {
+		// singleV.error = wrong_shard_server();
+		// return singleV;
+		throw wrong_shard_server();
+	}
+	state Optional<Value> v;
+	
+	state int path = 0;
+	auto i = data->data().at(version).lastLessOrEqual(key);
+	state uint64_t changeCounter = data->shardChangeCounter;
+	
+	if (i && i->isValue() && i.key() == key) {
+		Value tmp = i->getValue();
+		if(i.key().startsWith("\x00"_sr) && tmp.startsWith(StringRef("\x00__cost"_sr))) {
+			v = tmp.substr(15);
+		} else v = tmp;
+		path = 1;
+	} else if (!i || !i->isClearTo() || i->getEndKey() <= key) {
+		path = 2;
+		Optional<Value> vv = wait(data->storage.readValue(key, options));
+		//Todo: waitall
+		data->counters.kvGetBytes += vv.expectedSize();
+		// Validate that while we were reading the data we didn't lose the version or shard
+		if (version < data->storageVersion()) {
+			CODE_PROBE(true, "transaction_too_old after readValue");
+			throw transaction_too_old();
+		}
+		data->checkChangeCounter(changeCounter, key);
+		v = vv;
+		
+	}
+	if (v.present()) {
+		++data->counters.rowsQueried;
+		// singleV.value = ValueRef(v.get());
+		
+		data->counters.bytesQueried += v.get().size();
+	} else {
+		++data->counters.emptyQueries;
+	}
+	// TraceEvent("GetVMultiValues", data->thisServerID)
+	// .detail("key", key)
+	// .detail("value", v.present()?v.get().toString():"null"_sr);
+	if (SERVER_KNOBS->READ_SAMPLING_ENABLED) {
+		// If the read yields no value, randomly sample the empty read.
+		int64_t bytesReadPerKSecond =
+			v.present() ? std::max((int64_t)(key.size() + v.get().size()), SERVER_KNOBS->EMPTY_READ_PENALTY)
+						: SERVER_KNOBS->EMPTY_READ_PENALTY;
+		data->metrics.notifyBytesReadPerKSecond(key, bytesReadPerKSecond);
+	}
+	return v;
+	// Check if the desired key might be cached
+	// auto cached = data->cachedRangeMap[req.keys[cur_pos]];
+}
+ACTOR Future<Void> getMultiValuesQ(StorageServer* data, GetMultiValuesRequest req) {
+	state Span span("SS:getMultiValues"_loc, req.spanContext);
+	state int64_t resultSize = 0;
+	state int cur_pos = 0;
+	state GetMultiValuesReply r;
+	r.more = false;
+	state std::vector<Future<Optional<Value>>> readRequests;
+	readRequests.clear();
+	++data->counters.multiGet;
+	data->counters.multiGetKeys += req.keys.size();
+	data->counters.multiGetKeyNumSample.addMeasurement(req.keys.size());
+
+	loop {
+		try {
+			if(cur_pos >= req.keys.size()) break;
+			
+		
+			
+			++data->counters.getValueQueries;
+			++data->counters.allQueries;
+			data->maxQueryQueue = std::max<int>(
+		    	data->maxQueryQueue, data->counters.allQueries.getValue() - data->counters.finishedQueries.getValue());
+			wait(data->getQueryDelay());
+			state PriorityMultiLock::Lock readLock = wait(data->getReadLock(req.options));
+			// Track time from requestTime through now as read queueing wait time
+			state double queueWaitEnd = g_network->timer();
+			data->counters.readQueueWaitSample.addMeasurement(queueWaitEnd - req.requestTime());
+			
+			Version commitVersion = getLatestCommitVersion(req.ssLatestCommitVersions, data->tag);
+			state Version version = wait(waitForVersion(data, commitVersion, req.version, req.spanContext));
+			r.version = version;
+			data->counters.readVersionWaitSample.addMeasurement(g_network->timer() - queueWaitEnd);
+
+			data->checkTenantEntry(version, req.tenantInfo, req.options.present() ? req.options.get().lockAware : false);
+			if (req.tenantInfo.hasTenant()) {
+				req.keys[cur_pos] = req.keys[cur_pos].withPrefix(req.tenantInfo.prefix.get());
+			}
+			readRequests.push_back(getSingleValue(data, req.options, version, req.keys[cur_pos]));
+
+		} catch (Error& e) {
+			TraceEvent("GetVMultiValuesError", data->thisServerID)
+	    	.detail("name", e.name());
+			throw;
+		}
+		cur_pos++;
+	}
+	wait(waitForAll(readRequests));
+	state int reqPos = 0;
+	try {
+		for(auto i=readRequests.begin();i!=readRequests.end();i++) {
+			state KeyValueErrorRef singleV;
+			// try {
+			if(i->isError()) {
+				if((i->getError()).code() == wrong_shard_server().code()) {
+					singleV.error = wrong_shard_server();
+				} else {
+					throw i->getError();
+				}
+			}
+			
+			singleV.value = i->get().present() ? i->get().get():Optional<ValueRef>();
+			singleV.key = req.keys[reqPos];
+			// } catch (Error& e) {
+				// singleV.error = e;
+			// }
+			reqPos++;
+			r.data.push_back_deep(r.arena, singleV);
+			TraceEvent("GetVMultiValues2", data->thisServerID)
+			.detail("key", singleV.key)
+			.detail("value", singleV.value.present()?singleV.value.get().toString():"null"_sr);
+			resultSize += i->get().expectedSize();
+		}
+	
+		TraceEvent("GetVMultiValuesReply", data->thisServerID);
+		req.reply.send(r);
+		data->transactionTagCounter.addRequest(req.tags, resultSize);
+
+		++data->counters.finishedQueries;
+
+		double duration = g_network->timer() - req.requestTime();
+		data->counters.readLatencySample.addMeasurement(duration);
+		// data->counters.readValueLatencySample.addMeasurement(duration);
+		data->counters.multiGetLatencySample.addMeasurement(duration);
+		if (data->latencyBandConfig.present()) {
+			int maxReadBytes =
+				data->latencyBandConfig.get().readConfig.maxReadBytes.orDefault(std::numeric_limits<int>::max());
+			data->counters.readLatencyBands.addMeasurement(duration, 1, Filtered(resultSize > maxReadBytes));
+		}
+
+	} catch (Error &e) {
+		TraceEvent("GetVMultiValuesError", data->thisServerID)
+	    	.detail("name", e.name());
+	    	// .detail("value", v.present()?v.get().toString():"null"_sr);
+		if (!canReplyWith(e))
+			throw;
+		data->sendErrorWithPenalty(req.reply, e, data->getPenalty());
+	}
+	return Void();
 }
 
 ACTOR Future<Void> getKeyValuesQ(StorageServer* data, GetKeyValuesRequest req)
@@ -13018,6 +13201,22 @@ ACTOR Future<Void> metricsCore(StorageServer* self, StorageServerInterface ssi) 
 		    te.detail("KvstoreBytesAvailable", sb.available);
 		    te.detail("KvstoreBytesTotal", sb.total);
 		    te.detail("KvstoreBytesTemp", sb.temp);
+			if(self->storage.getKeyValueStoreType() == KeyValueStoreType::MEMORY) {
+				CacheStatus cacheStatus= self->storage.getKeyValueStore()->getCacheStatus();
+				te.detail("CacheNumKeys", cacheStatus.keyNum);
+				te.detail("CacheBytesUsed", cacheStatus.usedByte);
+				te.detail("CacheBytesempty", cacheStatus.freeByte);
+				te.detail("CacheByteInsert", cacheStatus.insertByte);
+				te.detail("CacheByteProduced", cacheStatus.producedByte);
+				te.detail("CacheNumEvicted", cacheStatus.evictionNum);
+				te.detail("CacheByteEvicted", cacheStatus.evictionByte);
+				te.detail("CacheNumKeysInsert", cacheStatus.insertKey);
+				te.detail("CacheReadKeys", cacheStatus.readKey);
+				te.detail("CacheMissKeys", cacheStatus.missKey);
+				te.detail("CacheHitKeys", cacheStatus.hitKey);
+				te.detail("CacheDeleteKeys", cacheStatus.deleteKey);
+				te.detail("CacheQueues", cacheStatus.queue_size);
+			}
 		    if (self->isTss()) {
 			    te.detail("TSSPairID", self->tssPairID);
 			    te.detail("TSSJointID",
@@ -13085,6 +13284,24 @@ ACTOR Future<Void> serveGetValueRequests(StorageServer* self, FutureStream<GetVa
 			req.reply.send(GetValueReply());
 		else
 			self->actors.add(self->readGuard(req, getValueQ));
+	}
+}
+
+ACTOR Future<Void> serveGetMultiValuesRequests(StorageServer* self, FutureStream<GetMultiValuesRequest> getMultiValues) {
+	getCurrentLineage()->modify(&TransactionLineage::operation) = TransactionLineage::Operation::GetMultiKeyValues;
+	loop {
+		GetMultiValuesRequest req = waitNext(getMultiValues);
+		// Warning: This code is executed at extremely high priority (TaskPriority::LoadBalancedEndpoint), so
+		// downgrade before doing real work
+		if (req.options.present() && req.options.get().debugID.present())
+			g_traceBatch.addEvent("GetMultiValuesDebug",
+			                      req.options.get().debugID.get().first(),
+			                      "storageServer.received"); //.detail("TaskID", g_network->getCurrentTask());
+
+		// if (SHORT_CIRCUT_ACTUAL_STORAGE && normalKeys.contains(req.key))
+		// 	req.reply.send(GetMultiValuesReply());
+		// else
+			self->actors.add(self->readGuard(req, getMultiValuesQ));
 	}
 }
 
@@ -13408,6 +13625,7 @@ ACTOR Future<Void> storageServerCore(StorageServer* self, StorageServerInterface
 	self->actors.add(logLongByteSampleRecovery(self->byteSampleRecovery));
 	self->actors.add(checkBehind(self));
 	self->actors.add(serveGetValueRequests(self, ssi.getValue.getFuture()));
+	self->actors.add(serveGetMultiValuesRequests(self, ssi.getMultiValues.getFuture()));
 	self->actors.add(serveGetKeyValuesRequests(self, ssi.getKeyValues.getFuture()));
 	self->actors.add(serveGetMappedKeyValuesRequests(self, ssi.getMappedKeyValues.getFuture()));
 	self->actors.add(serveGetKeyValuesStreamRequests(self, ssi.getKeyValuesStream.getFuture()));
@@ -13719,6 +13937,9 @@ ACTOR Future<Void> replaceInterface(StorageServer* self, StorageServerInterface 
 
 					tr.set(serverListKeyFor(ssi.id()), serverListValue(ssi));
 
+					tr.addReadConflictRange(singleKeyRange(serverCacheTypeKeyFor(ssi.id())));
+					tr.set(serverCacheTypeKeyFor(ssi.id()), serverCacheTypeValue(self->cacheType));
+
 					if (rep.newLocality) {
 						tr.addReadConflictRange(tagLocalityListKeys);
 						tr.set(tagLocalityListKeyFor(ssi.locality.dcId()),
@@ -13888,8 +14109,10 @@ ACTOR Future<Void> storageServer(IKeyValueStore* persistentData,
                                  Version tssSeedVersion,
                                  ReplyPromise<InitializeStorageReply> recruitReply,
                                  Reference<AsyncVar<ServerDBInfo> const> db,
-                                 std::string folder) {
-	state StorageServer self(persistentData, db, ssi);
+                                 std::string folder,
+								 KeyValueStoreType cacheType,
+								 CachePolicy cachePolicy) {
+	state StorageServer self(persistentData, db, ssi, cacheType, cachePolicy);
 	self.shardAware = persistentData->shardAware();
 	state Future<Void> ssCore;
 	self.initialClusterVersion = startVersion;

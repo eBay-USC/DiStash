@@ -82,6 +82,12 @@ struct NetworkOptions {
 	NetworkOptions();
 };
 
+enum LoadBalancePolicy {
+	FIRST,
+	RANDOM,
+	MINILOAD
+};
+
 class Database {
 public:
 	// Creates a database object that represents a connection to a cluster
@@ -398,6 +404,9 @@ public:
 	                                                       GetRangeLimits limits,
 	                                                       Snapshot = Snapshot::False,
 	                                                       Reverse = Reverse::False);
+
+	[[nodiscard]] Future<Standalone<VectorRef<KeyValueErrorRef>> > getMultiValues(VectorRef<KeyRef> &keys, 
+													 Snapshot snapshot = Snapshot::False,LoadBalancePolicy policy = FIRST);
 
 private:
 	template <class GetKeyValuesFamilyRequest, class GetKeyValuesFamilyReply, class RangeResultFamily>

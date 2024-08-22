@@ -68,6 +68,7 @@ ACTOR Future<bool> fileConfigureCommandActor(Reference<IDatabase> db,
 
 	try {
 		configString += DatabaseConfiguration::configureStringFromJSON(configJSON);
+		if(configString[0] ==' ') configString = configString.substr(1);
 	} catch (Error& e) {
 		fmt::print("ERROR: {}", e.what());
 		printUsage("fileconfigure"_sr);

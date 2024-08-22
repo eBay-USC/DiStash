@@ -544,6 +544,41 @@ struct RolesInfo {
 			obj["fetched_versions"] = StatusCounter(storageMetrics.getValue("FetchedVersions")).getStatus();
 			obj["fetches_from_logs"] = StatusCounter(storageMetrics.getValue("FetchesFromLogs")).getStatus();
 
+			JsonBuilderObject cacheStats;
+			cacheStats.setKeyRawNumber("cache_keys_numbers",storageMetrics.getValue("CacheNumKeys"));
+			cacheStats.setKeyRawNumber("cache_used_bytes",storageMetrics.getValue("CacheBytesUsed"));
+			cacheStats.setKeyRawNumber("cache_available_bytes",storageMetrics.getValue("CacheBytesempty")); 
+			cacheStats.setKeyRawNumber("cache_inserted_bytes",storageMetrics.getValue("CacheByteInsert"));
+			cacheStats.setKeyRawNumber("cache_inserted_keys",storageMetrics.getValue("CacheNumKeysInsert"));
+			cacheStats.setKeyRawNumber("cache_produced_bytes",storageMetrics.getValue("CacheByteProduced"));
+			cacheStats.setKeyRawNumber("cache_evicted_keys",storageMetrics.getValue("CacheNumEvicted"));
+			cacheStats.setKeyRawNumber("cache_evicted_bytes",storageMetrics.getValue("CacheByteEvicted"));
+			cacheStats.setKeyRawNumber("cache_read_keys",storageMetrics.getValue("CacheReadKeys"));
+			cacheStats.setKeyRawNumber("cache_hit_keys",storageMetrics.getValue("CacheHitKeys"));
+			cacheStats.setKeyRawNumber("cache_miss_keys",storageMetrics.getValue("CacheMissKeys"));
+			cacheStats.setKeyRawNumber("cache_delete_keys",storageMetrics.getValue("CacheDeleteKeys"));
+			cacheStats.setKeyRawNumber("cache_CAMP_queues",storageMetrics.getValue("CacheQueues"));
+			// obj["cache_insert_keys"] = StatusCounter(storageMetrics.getValue("InsertKeys")).getStatus();
+
+			TraceEventFields const& multiGetLatencyMetrics = metrics.at("MultiGetLatencyMetrics");
+			if(multiGetLatencyMetrics.size()) {
+				cacheStats["multiget_latency_statistics"] = addLatencyStatistics(multiGetLatencyMetrics);
+			}
+
+			TraceEventFields const& multiGetkeyNumLatencyMetrics = metrics.at("MultiGetKeyNumMetrics");
+			if(multiGetkeyNumLatencyMetrics.size()) {
+				cacheStats["multiget_key_num_statistics"] = addLatencyStatistics(multiGetkeyNumLatencyMetrics);
+			}
+
+			TraceEventFields const& cacheValueSizeMetrics = metrics.at("CacheValueSize");
+			if(cacheValueSizeMetrics.size()) {
+				cacheStats["multiget_cache_value_size_statistics"] = addLatencyStatistics(cacheValueSizeMetrics);
+			}
+
+			if (cacheStats.size()) {
+				obj["cache_status"] = cacheStats;
+			}
+
 			Version version = storageMetrics.getInt64("Version");
 			Version durableVersion = storageMetrics.getInt64("DurableVersion");
 
@@ -1051,6 +1086,14 @@ ACTOR static Future<JsonBuilderObject> processStatusFetcher(
 					std::string commandLine;
 					if (programStartEvent.tryGetValue("CommandLine", commandLine)) {
 						statusObj["command_line"] = commandLine;
+					}
+
+					std::string cacheType;
+					if(programStartEvent.tryGetValue("CacheType",cacheType)){
+						statusObj["cache_type"] = cacheType;
+					}
+					else{
+						statusObj["cache_type"] = "None";
 					}
 				}
 			}
@@ -1993,7 +2036,9 @@ static Future<std::vector<std::pair<iface, EventMap>>> getServerMetrics(
 namespace {
 
 const std::vector<std::string> STORAGE_SERVER_METRICS_LIST{ "StorageMetrics", "ReadLatencyMetrics", "ReadLatencyBands",
-	                                                        "BusiestReadTag", "BusiestWriteTag",    "RocksDBMetrics" };
+	                                                        "BusiestReadTag", "BusiestWriteTag",    "RocksDBMetrics",
+															"MultiGetLatencyMetrics", "MultiGetKeyNumMetrics",
+															"CacheValueSize" };
 
 } // namespace
 

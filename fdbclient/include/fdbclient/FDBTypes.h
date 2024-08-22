@@ -450,6 +450,31 @@ inline std::vector<KeyRangeRef> operator-(const KeyRangeRef& lhs, const KeyRange
 	return result;
 }
 
+struct KeyValueErrorRef {
+	KeyRef key;
+	Optional<ValueRef> value;
+	Error error;
+	KeyValueErrorRef() {}
+	KeyValueErrorRef(const KeyRef& key, const ValueRef& value) : key(key), value(value) {}
+	KeyValueErrorRef(Arena& a, const KeyValueErrorRef& copyFrom) : key(a, copyFrom.key), value(a, copyFrom.value) {}
+	bool operator==(const KeyValueErrorRef& r) const { 
+		if(value.present()) return key == r.key && value.present() == r.value.present() && value.get()== r.value.get();
+		else  return key == r.key && value.present() == r.value.present();
+	}
+	bool operator!=(const KeyValueErrorRef& r) const { 
+		return !((*this)==r);
+	 }
+
+	int expectedSize() const { return key.expectedSize() + value.expectedSize() + sizeof(Error); }
+
+	template <class Ar>
+	force_inline void serialize(Ar& ar) {
+		serializer(ar, key, value, error);
+	}
+
+	
+};
+
 struct KeyValueRef {
 	KeyRef key;
 	ValueRef value;
@@ -977,6 +1002,10 @@ struct KeyValueStoreType {
 		SSD_ROCKSDB_V1 = 5,
 		SSD_SHARDED_ROCKSDB = 6,
 		NONE = 7,
+		Memcached = 8,
+		Vedis = 9,
+		Cache = 10,
+		HYBRID = 11,
 		END
 	};
 
@@ -1012,6 +1041,12 @@ private:
 template <>
 struct Traceable<KeyValueStoreType> : std::true_type {
 	static std::string toString(KeyValueStoreType const& value) { return value.toString(); }
+};
+
+enum class CachePolicy {
+	NONE,
+	LRU,
+	CAMP
 };
 
 struct TLogVersion {
@@ -1161,6 +1196,46 @@ struct StorageBytes {
 		    .detail("StorageBytesAvailable", available);
 	}
 };
+
+struct CacheStatus {
+	
+	// Number of total keys in the cache
+	int64_t keyNum;
+	// Number of total bytes in the cache
+	int64_t usedByte;
+	// Amount of cache that is empty
+	int64_t freeByte;
+	// Total number of keys inserted by the application
+	int64_t insertKey;
+	// Total number of bytes inserted by the application
+	int64_t insertByte;
+	// Total number of keys deleted
+	int64_t deleteKey;
+	// Total number of keys read
+	int64_t readKey;
+	// Total number of keys missed
+	int64_t missKey;
+	// Total number of keys hit
+	int64_t hitKey;
+	// Total number of bytes produced by the transient store
+	int64_t producedByte;
+	// Total number of evictions
+	int64_t evictionNum;
+	// Total bytes evicted
+	int64_t evictionByte;
+	// Queues in the CAMP
+	int64_t queue_size;
+
+	
+
+	CacheStatus(int64_t keyNum=0, int64_t usedByte=0,int64_t freeByte=0,int64_t insertByte=0,int64_t insertKey=0, int64_t producedByte=0,int64_t evictionNum=0,int64_t evictionByte=0, 
+		int64_t readKey = 0, int64_t missKey=0, int64_t deleteKey = 0, int64_t hitKey = 0) :
+		keyNum(keyNum), usedByte(usedByte), freeByte(freeByte), insertByte(insertByte), producedByte(producedByte), 
+		evictionNum(evictionNum), evictionByte(evictionByte),insertKey(insertKey),readKey(readKey), missKey(missKey),  deleteKey(deleteKey), hitKey(hitKey){
+			queue_size = 0;
+		}
+};
+
 struct LogMessageVersion {
 	// Each message pushed into the log system has a unique, totally ordered LogMessageVersion
 	// See ILogSystem::push() for how these are assigned

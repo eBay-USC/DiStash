@@ -4568,6 +4568,288 @@ void getRangeFinished(Reference<TransactionState> trState,
 	}
 }
 
+template <typename A> 
+void printVector(std::vector<A> &vec, const char* text) {
+	std::sort(vec.begin(), vec.end());
+	int siz = vec.size();
+	// TraceEvent(SevInfo, "Total Sample").detail(text, siz)
+	// .detail("avg", (double) vec[siz*0.5]);
+	printf("%s\nTotal Sample:%d\n", text, siz);
+	for(int i=0;i<siz;i++) {
+		printf("%0.1lflf ", (double)vec[i]);
+	}
+	// printf("Avg: %lf, 90: %lf, 95: %lf, 99: %lf\n", (double) vec[siz*0.5], (double)vec[siz*0.9], (double)vec[siz*0.95], (double)vec[siz*0.99]);
+}
+ACTOR Future<std::pair<GetMultiValuesReply, double>> monitorRequestCompletion(Future<GetMultiValuesReply> originalFuture, double startTime) {
+	state GetMultiValuesReply reply = wait(originalFuture);
+	double duration = now()-startTime;
+	return std::make_pair(reply,duration);
+}
+
+
+void mapKeysServerUID (std::map<std::string, std::vector<int>> &serverRequest, std::vector<Future<KeyRangeLocationInfo>> &locationRequests, LoadBalancePolicy policy = FIRST) {
+	if(policy == FIRST) {
+		int keyPos = 0;
+		while(keyPos < locationRequests.size()) {
+			KeyRangeLocationInfo server  = locationRequests[keyPos].get();
+			
+			std::string serverUID = server.locations.getPtr()->operator[](0).getPtr()->interf.uniqueID.toString();
+			if(serverRequest.find(serverUID)==serverRequest.end()) 
+				serverRequest[serverUID] = std::vector<int>();
+			serverRequest[serverUID].push_back(keyPos);
+			// printf("siz: %d", serverRequest[serverUID].size());
+			keyPos++;
+
+		}
+		return;
+	} 
+	if(policy == RANDOM) {
+		int keyPos = 0;
+		while(keyPos < locationRequests.size()) {
+			KeyRangeLocationInfo server  = locationRequests[keyPos].get();
+			int pos = rand()%server.locations.getPtr()->size();
+			std::string serverUID = server.locations.getPtr()->operator[](pos).getPtr()->interf.uniqueID.toString();
+			if(serverRequest.find(serverUID)==serverRequest.end()) 
+				serverRequest[serverUID] = std::vector<int>();
+			serverRequest[serverUID].push_back(keyPos);
+			// printf("siz: %d", serverRequest[serverUID].size());
+			keyPos++;
+
+		}
+		return;
+	}
+	if(policy == MINILOAD) {
+		int keyPos = 0;
+		while (keyPos < locationRequests.size()) {
+			KeyRangeLocationInfo server  = locationRequests[keyPos].get();
+			int serverPos = 0, minRequest = 0;
+			std::string miniLoadServer = server.locations.getPtr()->operator[](serverPos).getPtr()->interf.uniqueID.toString();// by default it is the first server;
+
+			if(serverRequest.find(miniLoadServer)==serverRequest.end()){
+				minRequest = 0;
+			} 
+			else{
+				minRequest =serverRequest[miniLoadServer].size();
+			}
+
+			while(1){
+				if(serverPos>=server.locations.getPtr()->size()) break; // finish looping all server
+				std::string serverUID = server.locations.getPtr()->operator[](serverPos).getPtr()->interf.uniqueID.toString();
+				int curServerRequest = serverRequest.find(serverUID)==serverRequest.end()?0:serverRequest[serverUID].size();
+				if(curServerRequest<minRequest){
+					minRequest = curServerRequest;
+					miniLoadServer = serverUID;
+				}
+				serverPos++;
+			}
+			if(serverRequest.find(miniLoadServer)==serverRequest.end()) 
+				serverRequest[miniLoadServer] = std::vector<int>();
+			serverRequest[miniLoadServer].push_back(keyPos);
+			keyPos++;
+		}
+	}
+}
+ACTOR Future<Standalone<VectorRef<KeyValueErrorRef>> > getMultiValues(Reference<TransactionState> trState,
+										 VectorRef<KeyRef> keys,
+										 Snapshot snapshot,
+										 LoadBalancePolicy policy = MINILOAD,
+										 UseTenant useTenant = UseTenant::True ) {
+	state Standalone<VectorRef<KeyValueErrorRef>> output;
+	state Span span("NAPI:getMultiValues"_loc, trState->spanContext);
+	state Optional<UID> getMultiValuesID = Optional<UID>();
+	CODE_PROBE(trState->hasTenant() && useTenant, "NativeAPI getMultiValues has tenant");
+	CODE_PROBE(!useTenant, "Get range ignoring tenant");
+	if (useTenant && trState->hasTenant()) {
+		span.addAttribute("tenant"_sr,
+		                  trState->tenant().get()->name.castTo<TenantNameRef>().orDefault("<unspecified>"_sr));
+	}
+	state int max_rep = 0;
+	// printf("Inside\n");
+	// TraceEvent("MultiGetValues", UID());
+	// state FILE *wr = fopen("1.txt","r");
+	try {
+		wait(trState->startTransaction());
+		trState->cx->validateVersion(trState->readVersion());
+		
+		state double startTime = now();
+		state int keyPos = 0;
+		// fprintf(wr, "keys size:%d", keys.size());
+		// printf("keys size:%d\n", keys.size());
+		state std::vector<Future<GetMultiValuesReply>> requests;
+		state std::vector<double> shardLatency;
+		state std::vector<double> shardSize;
+		state std::vector<Future<KeyRangeLocationInfo>> locationRequests; //Future vector
+		state std::map<std::string, Reference<LocationInfo>> servers; // To identify the unique server
+		state std::map<std::string, std::vector<int>> serverRequest; //store the request for each server
+
+
+		loop { // Retry when some keys failed
+			if(keyPos>=keys.size()) break;
+			requests.clear();
+			serverRequest.clear();
+			locationRequests.clear();
+
+			//get KeyLocation from server
+			loop {
+				if(keyPos>=keys.size()) break;
+				locationRequests.push_back(getKeyLocation(
+					trState, keys[keyPos], &StorageServerInterface::getMultiValues, Reverse(false), useTenant)); 
+				keyPos++;
+			}
+			// printf("First part\n");
+			wait(waitForAll(locationRequests));
+
+			//Mapping serverUID to locationInfo
+			keyPos = 0;
+			loop {
+				if(keyPos>=keys.size()) break;
+				state KeyRangeLocationInfo server  = locationRequests[keyPos].get();
+				state int serverPos = 0;
+				loop{
+					if(serverPos>=server.locations.getPtr()->size()) break; // finish looping all server
+					std::string serverUID = server.locations.getPtr()->operator[](serverPos).getPtr()->interf.uniqueID.toString();
+					if(servers.find(serverUID)==servers.end()){// if not in the map put it in the server id to server ref map
+						std::vector<Reference<ReferencedInterface<StorageServerInterface>>> s;
+						s.push_back(server.locations.getPtr()->operator[](serverPos));
+						Reference<LocationInfo>ref =  makeReference<LocationInfo>(s, true);
+						std::string test= ref.getPtr()->operator[](0).getPtr()->interf.uniqueID.toString();
+						servers[serverUID]= ref;
+					}
+					serverPos++;
+				}
+				max_rep = std::max(max_rep, serverPos);
+				keyPos++;
+			}
+			
+			keyPos = 0;
+
+			//Mapping Keys to serverUID
+			mapKeysServerUID(serverRequest, locationRequests, policy);
+
+			//Sending request based on mappings 
+			state std::map<std::string, std::vector<int>>::iterator serverRequestPos = serverRequest.begin();
+			loop {
+				if(serverRequestPos==serverRequest.end()) break;
+				state GetMultiValuesRequest req;
+				// std::vector<Reference<ReferencedInterface<StorageServerInterface>>> vec;
+				// vec.push_back(servers[i->first]);
+				// LocationInfo location(vec);
+				Reference<LocationInfo> loc =  servers[serverRequestPos->first];
+				// loc.addref
+				
+				req.tenantInfo = useTenant ? trState->getTenantInfo() : TenantInfo();
+				req.options = trState->readOptions;
+				req.version = trState->readVersion();
+				trState->cx->getLatestCommitVersions(loc, trState, req.ssLatestCommitVersions);
+				req.tags = trState->cx->sampleReadTags() ? trState->options.readTags : Optional<TagSet>();
+				req.spanContext = span.context;
+				// printf("size: %d", serverRequestPos->second.size());
+				for(auto j = serverRequestPos->second.begin(); j!=serverRequestPos->second.end();j++) {
+					// printf("key: %s ", keys[*j].toString());
+					req.keys.push_back_deep(req.arena, keys[*j]);
+				}
+				shardSize.push_back(req.keys.size());
+				requests.push_back(loadBalance(
+								trState->cx.getPtr(),
+								loc,
+								&StorageServerInterface::getMultiValues,
+								req,
+								TaskPriority::DefaultPromiseEndpoint,
+								AtMostOnce::False,
+								trState->cx->enableLocalityLoadBalance ? &trState->cx->queueModel : nullptr));
+				serverRequestPos++;
+			}
+			// if(1) return output;
+			// loop {
+			// 	if(keyPos>=keys.size()) break;
+			// 	state Key locationKey = keys[keyPos];
+			// 	// printf("keys %d %s\n", keyPos, locationKey.toString().c_str());
+			// 	state KeyRangeLocationInfo beginServer = wait(getKeyLocation(
+			// 		trState, locationKey, &StorageServerInterface::getMultiValues, Reverse(false), useTenant));
+			// 	state KeyRange shard = beginServer.range;
+			// 	// printf("Shards: %s\n",shard.toString().c_str());
+			// 	// printf("keys beginServer %d %s\n", keyPos, shard.toString().c_str());
+			// 	state GetMultiValuesRequest req;
+			// 	req.tenantInfo = useTenant ? trState->getTenantInfo() : TenantInfo();
+			// 	req.options = trState->readOptions;
+			// 	req.version = trState->readVersion();
+			// 	trState->cx->getLatestCommitVersions(beginServer.locations, trState, req.ssLatestCommitVersions);
+			// 	req.tags = trState->cx->sampleReadTags() ? trState->options.readTags : Optional<TagSet>();
+			// 	req.spanContext = span.context;
+			// 	req.keys.push_back_deep(req.arena, locationKey);
+				
+			// 	// state KeyRangeLocationInfo locationInfo =
+			// 		// wait(getKeyLocation(trState, keys[keyPos], &StorageServerInterface::getMultiValues, Reverse::False, useTenant));
+			// 	// printf("keys location %d %s\n", keyPos, beginServer.range.toString().c_str());
+			// 	loop {
+			// 		if(keyPos+1>=keys.size()) break;
+			// 		// printf("keyPos: %d keyNxt:%s\n", keyPos, keys[keyPos+1].toString().c_str());
+			// 		if(shard.contains(keys[keyPos+1])) {
+			// 			// printf("keyPos: %d keyNxt1:%s\n", keyPos, keys[keyPos+1].toString().c_str());
+			// 			req.keys.push_back_deep(req.arena, Key(keys[keyPos+1]));
+			// 			// printf("keyPos: %d keyNxt2:%s\n", keyPos, keys[keyPos+1].toString().c_str());
+			// 			keyPos++;
+			// 			// printf("keyNxt3");
+			// 		} else break;
+			// 	}
+
+			// 	shardSize.push_back(req.keys.size());
+			// 	requests.push_back(loadBalance(
+			// 					trState->cx.getPtr(),
+			// 					beginServer.locations,
+			// 					&StorageServerInterface::getMultiValues,
+			// 					req,
+			// 					TaskPriority::DefaultPromiseEndpoint,
+			// 					AtMostOnce::False,
+			// 					trState->cx->enableLocalityLoadBalance ? &trState->cx->queueModel : nullptr));
+			// 	keyPos++;
+			// }
+			wait(waitForAll(requests));
+			state int requestsPos = 0;
+			keyPos = keys.size();
+			for(auto i = requests.begin(); i!=requests.end();i++) {
+				// printf("keys location2\n");
+				// shardLatency.push_back(i->get().second);
+				++trState->cx->transactionPhysicalReads;
+				state GetMultiValuesReply reply = i->get();
+				++trState->cx->transactionPhysicalReadsCompleted;
+				state int replyPos = 0;
+				requestsPos++;
+				
+				loop {
+					if(replyPos >= reply.data.size()) break;
+					if(reply.data[replyPos].error.code() == error_code_wrong_shard_server) 
+						keys.push_back(output.arena(), reply.data[replyPos].key);
+					else if(reply.data[replyPos].value.present()) {
+						// printf("values %d %s\n", replyPos, reply.data[replyPos].value.get().toString().c_str());
+						output.push_back_deep(output.arena(), KeyValueErrorRef(reply.data[replyPos].key, reply.data[replyPos].value.get()));
+					}
+					replyPos++;
+				}
+			}
+			
+		}
+		double latency = now() - startTime;
+		trState->cx->readLatencies.addSample(latency);
+		
+		printf("Total Size: %d Total Shards%d\n", (int)keys.size(), (int)requests.size());
+		printf("%d\n", max_rep);
+		// printVector(shardLatency, "Shard's latency");
+		printVector(shardSize, "Shard's Size");
+		
+	} catch(Error &e) {
+		printf("MultiGetError %d: %s\n",e.code(), e.name());
+		TraceEvent("MultiGetError", UID())
+		.detail("name",e.name())
+		.detail("code",e.code());
+		// printf("%s %d\n",e.name(), e.code());
+	}
+	// printf("NativeAPI value size: %d\n", output.size());
+	return output;
+
+
+}
+
 ACTOR template <class GetKeyValuesFamilyRequest, // GetKeyValuesRequest or GetMappedKeyValuesRequest
                 class GetKeyValuesFamilyReply, // GetKeyValuesReply or GetMappedKeyValuesReply (It would be nice if
                                                // we could use REPLY_TYPE(GetKeyValuesFamilyRequest) instead of specify
@@ -5853,6 +6135,11 @@ Future<RangeResult> Transaction::getRange(const KeySelector& begin,
                                           Snapshot snapshot,
                                           Reverse reverse) {
 	return getRange(begin, end, GetRangeLimits(limit), snapshot, reverse);
+}
+
+Future<Standalone<VectorRef<KeyValueErrorRef>> > Transaction::getMultiValues(VectorRef<KeyRef> &keys, 
+													 Snapshot snapshot,LoadBalancePolicy policy) {
+	return ::getMultiValues(trState, keys, snapshot,policy);
 }
 
 // A method for streaming data from the storage server that is more efficient than getRange when reading large amounts

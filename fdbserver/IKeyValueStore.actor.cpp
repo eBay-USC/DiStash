@@ -32,7 +32,9 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
                             bool openRemotely,
                             Reference<AsyncVar<ServerDBInfo> const> db,
                             Optional<EncryptionAtRestMode> encryptionMode,
-                            int64_t pageCacheBytes) {
+                            int64_t pageCacheBytes,
+							KeyValueStoreType cacheType,
+							CachePolicy cachePolicy) {
 	// Only Redwood support encryption currently.
 	if (encryptionMode.present() && encryptionMode.get().isEncryptionEnabled() &&
 	    storeType != KeyValueStoreType::SSD_REDWOOD_V1) {
@@ -43,6 +45,29 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
 	}
 	if (openRemotely) {
 		return openRemoteKVStore(storeType, filename, logID, memoryLimit, checkChecksums, checkIntegrity);
+	}
+		if(cacheType != KeyValueStoreType::NONE) {
+		std::string cachename;
+		if(filename .find("_cache_")!=std::string::npos) {
+			cachename = filename;
+		} else cachename = filename + "_cache_";
+		TraceEvent("cachename").detail("name", cachename);
+		switch (cacheType) {
+			case KeyValueStoreType::HYBRID:
+				return keyValueStoreHybrid(
+					keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, checkChecksums, checkIntegrity),
+					keyValueStoreCache(KeyValueStoreType::MEMORY, cachename, logID, memoryLimit, cachePolicy)
+				);
+			case KeyValueStoreType::Memcached:
+				return keyValueStoreMemcached(NetworkAddress::parse("127.0.0.1:11211"), KeyValueStoreType::Memcached, logID);
+			case KeyValueStoreType::Vedis:
+				return keyValueStoreRedis(KeyValueStoreType::Vedis, logID);
+		// return keyValueStoreMemory(filename, logID, memoryLimit);
+			case KeyValueStoreType::Cache:
+				return keyValueStoreCache(KeyValueStoreType::MEMORY, cachename, logID, memoryLimit, cachePolicy);
+			case KeyValueStoreType::MEMORY:
+				return keyValueStoreMemory(cachename, logID, memoryLimit);
+		}
 	}
 	switch (storeType) {
 	case KeyValueStoreType::SSD_BTREE_V1:
@@ -63,6 +88,18 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
 		                           memoryLimit,
 		                           "fdr",
 		                           KeyValueStoreType::MEMORY_RADIXTREE); // for radixTree type, set file ext to "fdr"
+	case KeyValueStoreType::Memcached:
+		return keyValueStoreMemcached(NetworkAddress::parse("127.0.0.1:11211"), KeyValueStoreType::Memcached, logID);
+	case KeyValueStoreType::Vedis:
+		return keyValueStoreRedis(KeyValueStoreType::Vedis, logID);
+		// return keyValueStoreMemory(filename, logID, memoryLimit);
+	case KeyValueStoreType::Cache:
+		return keyValueStoreCache(cacheType, filename, logID, memoryLimit,cachePolicy);
+	case KeyValueStoreType::HYBRID:
+		return keyValueStoreHybrid(
+			keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, checkChecksums, checkIntegrity),
+			keyValueStoreCache(cacheType, filename, logID, memoryLimit, cachePolicy)
+		);
 	default:
 		UNREACHABLE();
 	}
@@ -80,6 +117,7 @@ ACTOR static Future<Void> replaceRange_impl(IKeyValueStore* self,
 	}
 	self->clear(rangeRef);
 	for (; kvItr != data.end(); kvItr++) {
+		if(!rangeRef.contains(kvItr->key)) continue;
 		self->set(*kvItr);
 		if (++sinceYield > 1000) {
 			wait(yield());

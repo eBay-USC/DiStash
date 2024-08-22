@@ -161,6 +161,7 @@ public:
 	                                   bool reverse = false) override {
 		return getRange(firstGreaterOrEqual(keys.begin), firstGreaterOrEqual(keys.end), limits, snapshot, reverse);
 	}
+	ThreadFuture<RangeResult>getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot = false,int policy=0) override;
 	ThreadFuture<MappedRangeResult> getMappedRange(const KeySelectorRef& begin,
 	                                               const KeySelectorRef& end,
 	                                               const StringRef& mapper,

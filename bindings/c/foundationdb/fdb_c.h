@@ -584,6 +584,15 @@ DLLEXPORT WARN_UNUSED_RESULT FDBFuture* fdb_transaction_get_range(FDBTransaction
                                                                   fdb_bool_t reverse);
 #endif
 
+DLLEXPORT WARN_UNUSED_RESULT FDBFuture* fdb_transaction_get_multi(FDBTransaction* tr,
+                                                                  const uint8_t**key,
+														                        int*single_key_length,
+														                        uint64_t length,
+                                                                  fdb_bool_t snapshot,
+                                                                  int policy
+                                                                  );
+ 
+
 DLLEXPORT WARN_UNUSED_RESULT FDBFuture* fdb_transaction_get_mapped_range(FDBTransaction* tr,
                                                                          uint8_t const* begin_key_name,
                                                                          int begin_key_name_length,
@@ -602,6 +611,14 @@ DLLEXPORT WARN_UNUSED_RESULT FDBFuture* fdb_transaction_get_mapped_range(FDBTran
                                                                          fdb_bool_t snapshot,
                                                                          fdb_bool_t reverse);
 
+DLLEXPORT void fdb_transaction_set_with_c(FDBTransaction* tr,
+                                   uint8_t const* key_name,
+                                   int key_name_length,
+                                   uint8_t const* value,
+                                   int value_length,
+                                   int64_t cost
+                                   );
+                                   
 DLLEXPORT void fdb_transaction_set(FDBTransaction* tr,
                                    uint8_t const* key_name,
                                    int key_name_length,

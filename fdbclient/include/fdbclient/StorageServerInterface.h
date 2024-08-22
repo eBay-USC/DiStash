@@ -93,6 +93,7 @@ struct StorageServerInterface {
 	LocalityData locality;
 	UID uniqueID;
 	Optional<UID> tssPairID;
+	KeyValueStoreType cacheType = KeyValueStoreType::NONE;
 
 	PublicRequestStream<struct GetValueRequest> getValue;
 	PublicRequestStream<struct GetKeyRequest> getKey;
@@ -125,6 +126,7 @@ struct StorageServerInterface {
 	RequestStream<struct AuditStorageRequest> auditStorage;
 	RequestStream<struct GetHotShardsRequest> getHotShards;
 	RequestStream<struct GetStorageCheckSumRequest> getCheckSum;
+	PublicRequestStream<struct GetMultiValuesRequest> getMultiValues;
 
 private:
 	bool acceptingRequests;
@@ -150,12 +152,12 @@ public:
 		if (ar.protocolVersion().hasSmallEndpoints()) {
 			if (ar.protocolVersion().hasTSS()) {
 				if (ar.protocolVersion().hasStorageInterfaceReadiness()) {
-					serializer(ar, uniqueID, locality, getValue, tssPairID, acceptingRequests);
+					serializer(ar, uniqueID, locality, getValue, tssPairID, acceptingRequests, cacheType);
 				} else {
-					serializer(ar, uniqueID, locality, getValue, tssPairID);
+					serializer(ar, uniqueID, locality, getValue, tssPairID, cacheType);
 				}
 			} else {
-				serializer(ar, uniqueID, locality, getValue);
+				serializer(ar, uniqueID, locality, getValue, cacheType);
 			}
 			if (Ar::isDeserializing) {
 				getKey = PublicRequestStream<struct GetKeyRequest>(getValue.getEndpoint().getAdjustedEndpoint(1));
@@ -204,6 +206,9 @@ public:
 				    RequestStream<struct GetHotShardsRequest>(getValue.getEndpoint().getAdjustedEndpoint(24));
 				getCheckSum =
 				    RequestStream<struct GetStorageCheckSumRequest>(getValue.getEndpoint().getAdjustedEndpoint(25));
+				getMultiValues = 
+					PublicRequestStream<struct GetMultiValuesRequest>(getValue.getEndpoint().getAdjustedEndpoint(26));
+
 			}
 		} else {
 			ASSERT(Ar::isDeserializing);
@@ -222,7 +227,9 @@ public:
 			           getStorageMetrics,
 			           waitFailure,
 			           getQueuingMetrics,
-			           getKeyValueStoreType);
+			           getKeyValueStoreType,
+					   getMultiValues,
+					   cacheType);
 			if (ar.protocolVersion().hasWatches()) {
 				serializer(ar, watchValue);
 			}
@@ -258,6 +265,7 @@ public:
 		streams.push_back(auditStorage.getReceiver());
 		streams.push_back(getHotShards.getReceiver());
 		streams.push_back(getCheckSum.getReceiver());
+		streams.push_back(getMultiValues.getReceiver(TaskPriority::LoadBalancedEndpoint));
 		FlowTransport::transport().addEndpoints(streams);
 	}
 };
@@ -338,6 +346,55 @@ struct GetValueRequest : TimedRequest {
 	template <class Ar>
 	void serialize(Ar& ar) {
 		serializer(ar, key, version, tags, reply, spanContext, tenantInfo, options, ssLatestCommitVersions);
+	}
+};
+
+struct GetMultiValuesReply : public LoadBalancedReply {
+	constexpr static FileIdentifier file_identifier = 2832830;
+	Arena arena;
+	VectorRef<KeyValueErrorRef> data;
+	Version version; // useful when latestVersion was requested
+	bool more;
+	bool cached = false;
+
+	GetMultiValuesReply() : version(invalidVersion), more(false), cached(false) {}
+
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, LoadBalancedReply::penalty, LoadBalancedReply::error, data, version, more, cached, arena);
+	}
+};
+
+struct GetMultiValuesRequest : TimedRequest {
+	constexpr static FileIdentifier file_identifier = 7650765;
+	Arena arena;
+	SpanContext spanContext;
+	TenantInfo tenantInfo;
+	VectorRef<KeyRef> keys;
+	Version version;
+	Optional<TagSet> tags;
+	ReplyPromise<GetMultiValuesReply> reply;
+	Optional<ReadOptions> options;
+	VersionVector ssLatestCommitVersions; // includes the latest commit versions, as known
+	                                      // to this client, of all storage replicas that
+	                                      // serve the given key
+	GetMultiValuesRequest() {}
+
+	bool verify() const { return tenantInfo.isAuthorized(); }
+
+	GetMultiValuesRequest(SpanContext spanContext,
+	                const TenantInfo& tenantInfo,
+	                const VectorRef<KeyRef>& keys,
+	                Version ver,
+	                Optional<TagSet> tags,
+	                Optional<ReadOptions> options,
+	                VersionVector latestCommitVersions)
+	  : spanContext(spanContext), tenantInfo(tenantInfo), keys(keys), version(ver), tags(tags), options(options),
+	    ssLatestCommitVersions(latestCommitVersions) {}
+
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, keys, version, tags, reply, spanContext, tenantInfo, options, ssLatestCommitVersions, arena);
 	}
 };
 

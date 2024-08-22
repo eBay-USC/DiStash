@@ -20,6 +20,7 @@
 
 package com.apple.foundationdb;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -468,6 +469,25 @@ class FDBTransaction extends NativeObjectWrapper implements Transaction, OptionC
 		}
 	}
 
+	protected FutureResults getMulti_internal(List<byte[]>keys,boolean isSnapshot){
+		byte[][]arrKeys = new byte[keys.size()][];
+		for(int i =0;i<keys.size();i++){
+			arrKeys[i] = keys.get(i);
+		}
+		if (eventKeeper != null) {
+			eventKeeper.increment(Events.JNI_CALL);
+		}
+		pointerReadLock.lock();
+		try {
+			//TODO logic here
+			return new FutureResults(Transaction_getMulti(getPtr(),arrKeys,isSnapshot,0),FDB.instance().isDirectBufferQueriesEnabled(), executor, eventKeeper);
+
+
+		}finally {
+			pointerReadLock.unlock();
+		}
+	}
+
 	// Users of this function must close the returned FutureResults when finished
 	protected FutureMappedResults getMappedRange_internal(KeySelector begin, KeySelector end,
 	                                                      byte[] mapper, // Nullable
@@ -567,7 +587,7 @@ class FDBTransaction extends NativeObjectWrapper implements Transaction, OptionC
 		}
 		pointerReadLock.lock();
 		try {
-			Transaction_set(getPtr(), key, value);
+			Transaction_set(getPtr(), key, value, 0);
 		} finally {
 			pointerReadLock.unlock();
 		}
@@ -828,6 +848,7 @@ class FDBTransaction extends NativeObjectWrapper implements Transaction, OptionC
 			byte[] keyEnd, boolean orEqualEnd, int offsetEnd,
 			int rowLimit, int targetBytes, int streamingMode, int iteration,
 			boolean isSnapshot, boolean reverse);
+	private native  long Transaction_getMulti(long cPtr,byte[][]keys, boolean isSnapShot,int policy);
 	private native long Transaction_getMappedRange(long cPtr, byte[] keyBegin, boolean orEqualBegin, int offsetBegin,
 	                                               byte[] keyEnd, boolean orEqualEnd, int offsetEnd,
 	                                               byte[] mapper, // Nonnull
@@ -835,7 +856,7 @@ class FDBTransaction extends NativeObjectWrapper implements Transaction, OptionC
 	                                               boolean isSnapshot, boolean reverse);
 	private native void Transaction_addConflictRange(long cPtr,
 			byte[] keyBegin, byte[] keyEnd, int conflictRangeType);
-	private native void Transaction_set(long cPtr, byte[] key, byte[] value);
+	private native void Transaction_set(long cPtr, byte[] key, byte[] value, long cost);
 	private native void Transaction_clear(long cPtr, byte[] key);
 	private native void Transaction_clear(long cPtr, byte[] beginKey, byte[] endKey);
 	private native void Transaction_mutate(long ptr, int code, byte[] key, byte[] value);

@@ -85,6 +85,13 @@ public:
 		using Result = MappedRangeResult;
 	};
 
+	struct GetMultiValuesReq {
+		GetMultiValuesReq(VectorRef<KeyRef> keys)
+		  : keys(keys){}
+		Standalone<VectorRef<KeyRef>> keys;
+		using Result = RangeResult;
+	};
+
 	// read() Performs a read (get, getKey, getRange, etc), in the context of the given transaction.  Snapshot or RYW
 	// reads are distingushed by the type Iter being SnapshotCache::iterator or RYWIterator. Fills in the snapshot cache
 	// as a side effect but does not affect conflict ranges. Some (indicated) overloads of read are required to update
@@ -92,7 +99,7 @@ public:
 	// make use of it.
 
 	ACTOR template <class Iter>
-	static Future<Optional<Value>> read(ReadYourWritesTransaction* ryw, GetValueReq read, Iter* it) {
+	static Future<Optional<Value>> read(ReadYourWritesTransaction* ryw, GetValueReq read, Iter* it, LoadBalancePolicy policy=FIRST) {
 		// This overload is required to provide postcondition: it->extractWriteMapIterator().segmentContains(read.key)
 
 		if (ryw->options.bypassUnreadable) {
@@ -138,6 +145,102 @@ public:
 	}
 
 	ACTOR template <class Iter>
+	static Future<RangeResult> read(ReadYourWritesTransaction* ryw, GetMultiValuesReq read, Iter* it,LoadBalancePolicy policy=FIRST) {
+		// This overload is required to provide postcondition: it->extractWriteMapIterator().segmentContains(read.key)
+
+		if (ryw->options.bypassUnreadable) {
+			it->bypassUnreadableProtection();
+		}
+		state RangeResult output;
+		state VectorRef<KeyRef> keys;
+		state int keyPos = -1;
+		// printf("RYW Key read\n");
+		loop {
+			// printf("RYW Key read1\n");
+			keyPos++;
+			
+			if(keyPos >= read.keys.size()) break;
+			// printf("RYW Key%d :%s\n",keyPos, read.keys[keyPos].toHexString().c_str());
+			// printf("RYW Key read2\n");
+			it->skip(read.keys[keyPos]);
+			// printf("RYW Key read3\n");
+			state bool dependent = it->is_dependent();
+			
+			if (it->is_kv()) {
+				// printf("RYW Key read4.1\n");
+				const KeyValueRef* result = it->kv(ryw->arena);
+				if (result != nullptr) {
+					output.push_back_deep(output.arena(), *result);
+				}
+				continue;
+			} else if (it->is_empty_range()) {
+				// printf("RYW Key read4.2\n");
+				continue;
+			} else {
+				// printf("RYW Key read4.3\n");
+				// Optional<Value> res = wait(ryw->tr.get(read.key, Snapshot::True));
+				// printf("RYW Key%d :%s\n",keyPos, read.keys[keyPos].toString().c_str());
+				keys.push_back_deep(output.arena(), read.keys[keyPos]);
+				
+			}
+
+		}
+		Standalone<VectorRef<KeyValueErrorRef>> queryResult = wait(ryw->tr.getMultiValues(keys, Snapshot::True,policy));
+		// printf("ReadYourWritesQueryEnd\n");
+		// printf("RWY value size: %d\n", queryResult.size());
+		keyPos = -1;
+		// for(int i=0;i<3;i++) {
+		// 	printf("Key%d: %s Value:%s\n",i, queryResult[i].key.toString().c_str(), queryResult[i].value.present()?queryResult[i].value.get().toString().c_str():"null");
+
+		// }
+		while(true) {
+			
+			keyPos++;
+			// printf("KeyPos:%d\n",keyPos);
+			if(keyPos >= queryResult.size()) break;
+			// printf("Wrote: Key: %s Value:%s %d\n", queryResult[keyPos].key.toString().c_str(), queryResult[keyPos].value.present()?queryResult[keyPos].value.get().toString().c_str():"null",it->is_kv());
+			it->skip(queryResult[keyPos].key);
+			// printf("Skip finished\n");
+			dependent = it->is_dependent();
+			KeyRef k(ryw->arena, queryResult[keyPos].key);
+			
+			if (queryResult[keyPos].value.present()) {
+				Optional<Value> res = Optional<Value>(queryResult[keyPos].value.get());
+				// printf("res finished\n");
+				if (ryw->cache.insert(k, res.get())) {
+					// printf("insert! \n");
+					ryw->arena.dependsOn(res.get().arena());
+				}
+				// printf("Out insert! \n");
+				if (!dependent) {
+					// printf("Finish insert! \n");
+					output.push_back_deep(output.arena(), KeyValueRef(k, res.get()));
+					// printf("Finished insert! \n");
+					continue;
+				}
+			} else {
+				ryw->cache.insert(k, Optional<ValueRef>());
+				if (!dependent)
+					continue;
+			}
+
+			// There was a dependent write at the key, so we need to lookup the iterator again
+			// printf("Dependent write! \n");
+			it->skip(k);
+			// printf("Wrote: Key: %s Value:%s %d\n", queryResult[keyPos].key.toString().c_str(), queryResult[keyPos].value.present()?queryResult[keyPos].value.get().toString().c_str():"null",it->is_kv());
+			ASSERT(it->is_kv());
+			const KeyValueRef* result = it->kv(ryw->arena);
+			if (result != nullptr) {
+				output.push_back_deep(output.arena(), *result);
+			} else {
+				continue;
+			}
+		}
+		// printf("ReadYourWritesEnd\n");
+		return output;
+	}
+
+	ACTOR template <class Iter>
 	static Future<Key> read(ReadYourWritesTransaction* ryw, GetKeyReq read, Iter* it) {
 		if (read.key.offset > 0) {
 			RangeResult result =
@@ -160,12 +263,12 @@ public:
 	};
 
 	template <class Iter>
-	static Future<RangeResult> read(ReadYourWritesTransaction* ryw, GetRangeReq<false> read, Iter* it) {
+	static Future<RangeResult> read(ReadYourWritesTransaction* ryw, GetRangeReq<false> read, Iter* it, LoadBalancePolicy policy=FIRST) {
 		return getRangeValue(ryw, read.begin, read.end, read.limits, it);
 	};
 
 	template <class Iter>
-	static Future<RangeResult> read(ReadYourWritesTransaction* ryw, GetRangeReq<true> read, Iter* it) {
+	static Future<RangeResult> read(ReadYourWritesTransaction* ryw, GetRangeReq<true> read, Iter* it, LoadBalancePolicy policy=FIRST) {
 		return getRangeValueBack(ryw, read.begin, read.end, read.limits, it);
 	};
 
@@ -175,6 +278,11 @@ public:
 
 	static Future<Optional<Value>> readThrough(ReadYourWritesTransaction* ryw, GetValueReq read, Snapshot snapshot) {
 		return ryw->tr.get(read.key, snapshot);
+	}
+
+	ACTOR static Future<RangeResult> readThrough(ReadYourWritesTransaction* ryw, GetMultiValuesReq read, Snapshot snapshot) {
+		// VectorRef<KeyValueErrorRef> result = wait(ryw->tr.getMultiValues(read.keys, snapshot));
+		return RangeResult();
 	}
 
 	ACTOR static Future<Key> readThrough(ReadYourWritesTransaction* ryw, GetKeyReq read, Snapshot snapshot) {
@@ -225,6 +333,20 @@ public:
 		// it will already point to the right segment (see the calling code in read()), so we don't need to skip
 		// read.key will be copied into ryw->arena inside of updateConflictMap if it is being added
 		updateConflictMap<mustUnmodified>(ryw, read.key, it);
+	}
+
+	template <bool mustUnmodified = false>
+	static void addConflictRange(ReadYourWritesTransaction* ryw,
+	                             GetMultiValuesReq read,
+	                             WriteMap::iterator& it,
+	                             const RangeResult &result) {
+		// it will already point to the right segment (see the calling code in read()), so we don't need to skip
+		// read.key will be copied into ryw->arena inside of updateConflictMap if it is being added
+		for(int i=0; i<read.keys.size();i++) {
+			it.skip(read.keys[i]);
+			updateConflictMap<mustUnmodified>(ryw, read.keys[i], it);
+		}
+		
 	}
 
 	static void addConflictRange(ReadYourWritesTransaction* ryw, GetKeyReq read, WriteMap::iterator& it, Key result) {
@@ -378,14 +500,16 @@ public:
 	ACTOR template <class Req>
 	static Future<typename Req::Result> readWithConflictRangeRYW(ReadYourWritesTransaction* ryw,
 	                                                             Req req,
-	                                                             Snapshot snapshot) {
+	                                                             Snapshot snapshot,
+																 LoadBalancePolicy p=FIRST) {
 		state RYWIterator it(&ryw->cache, &ryw->writes);
 		choose {
-			when(typename Req::Result result = wait(read(ryw, req, &it))) {
+			when(typename Req::Result result = wait(read(ryw, req, &it, p))) {
 				// Some overloads of addConflictRange() require it to point to the "right" key and others don't.  The
 				// corresponding overloads of read() have to provide that guarantee!
-				if (!snapshot)
-					addConflictRange(ryw, req, it.extractWriteMapIterator(), result);
+				if (!snapshot) {
+					// addConflictRange(ryw, req, it.extractWriteMapIterator(), result);
+				}
 				return result;
 			}
 			when(wait(ryw->resetPromise.getFuture())) {
@@ -396,13 +520,14 @@ public:
 	template <class Req>
 	static inline Future<typename Req::Result> readWithConflictRange(ReadYourWritesTransaction* ryw,
 	                                                                 Req const& req,
-	                                                                 Snapshot snapshot) {
+	                                                                 Snapshot snapshot,
+																	 LoadBalancePolicy policy=FIRST) {
 		if (ryw->options.readYourWritesDisabled) {
 			return readWithConflictRangeThrough(ryw, req, snapshot);
 		} else if (snapshot && ryw->options.snapshotRywEnabled <= 0) {
 			return readWithConflictRangeSnapshot(ryw, req);
 		}
-		return readWithConflictRangeRYW(ryw, req, snapshot);
+		return readWithConflictRangeRYW(ryw, req, snapshot, policy);
 	}
 
 	template <class Iter>
@@ -1195,7 +1320,8 @@ public:
 	ACTOR template <bool backwards>
 	static Future<MappedRangeResult> readWithConflictRangeRYW(ReadYourWritesTransaction* ryw,
 	                                                          GetMappedRangeReq<backwards> req,
-	                                                          Snapshot snapshot) {
+	                                                          Snapshot snapshot,
+															  LoadBalancePolicy policy=FIRST) {
 		choose {
 			when(MappedRangeResult result = wait(readThrough(ryw, req, Snapshot::True))) {
 				// Insert read conflicts (so that it supported Snapshot::True) and check it is not modified (so it masks
@@ -1765,6 +1891,13 @@ Future<RangeResult> ReadYourWritesTransaction::getRange(KeySelector begin,
 	            : RYWImpl::readWithConflictRange(this, RYWImpl::GetRangeReq<false>(begin, end, limits), snapshot);
 
 	reading.add(success(result));
+	return result;
+}
+
+Future<RangeResult> ReadYourWritesTransaction::getMultiValues(const Standalone<VectorRef<StringRef>> &keys, Snapshot snapshot,LoadBalancePolicy policy) {
+	// for(int i=0;i<keys.size();i++) printf("rw key %d %s\n", i, keys[i].begin());
+	// printf("RYW0 Key%d :%s\n",0, keys[0].toString().c_str());
+	Future<RangeResult> result = RYWImpl::readWithConflictRange(this, RYWImpl::GetMultiValuesReq(keys), snapshot,policy);
 	return result;
 }
 

@@ -287,6 +287,12 @@ std::map<std::string, std::string> configForToken(std::string const& mode) {
 	} else if (mode == "memory-radixtree-beta") {
 		logType = KeyValueStoreType::SSD_BTREE_V2;
 		storeType = KeyValueStoreType::MEMORY_RADIXTREE;
+	} else if(mode == "hybrid") {
+		logType = KeyValueStoreType::HYBRID;
+		storeType = KeyValueStoreType::HYBRID;
+	} else if(mode == "cache") {
+		logType = KeyValueStoreType::Cache;
+		storeType = KeyValueStoreType::Cache;
 	}
 	// Add any new store types to fdbserver/workloads/ConfigureDatabase, too
 

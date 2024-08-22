@@ -62,6 +62,7 @@
 #include "fdbclient/IKeyValueStore.h"
 #include "fdbserver/MoveKeys.actor.h"
 #include "fdbserver/NetworkTest.h"
+#include "fdbclient/FDBTypes.h"
 #include "fdbserver/RemoteIKeyValueStore.actor.h"
 #include "fdbserver/RestoreWorkerInterface.actor.h"
 #include "fdbserver/ServerDBInfo.h"
@@ -111,14 +112,15 @@ using namespace std::literals;
 
 // clang-format off
 enum {
-	OPT_CONNFILE, OPT_SEEDCONNFILE, OPT_SEEDCONNSTRING, OPT_ROLE, OPT_LISTEN, OPT_PUBLICADDR, OPT_DATAFOLDER, OPT_LOGFOLDER, OPT_PARENTPID, OPT_TRACER, OPT_NEWCONSOLE,
+	OPT_CONNFILE, OPT_SEEDCONNFILE, OPT_SEEDCONNSTRING, OPT_CACHE_TYPE, OPT_ROLE, OPT_LISTEN, OPT_PUBLICADDR, OPT_DATAFOLDER, OPT_LOGFOLDER, OPT_PARENTPID, OPT_TRACER, OPT_NEWCONSOLE,
 	OPT_NOBOX, OPT_TESTFILE, OPT_RESTARTING, OPT_RESTORING, OPT_RANDOMSEED, OPT_KEY, OPT_MEMLIMIT, OPT_VMEMLIMIT, OPT_STORAGEMEMLIMIT, OPT_CACHEMEMLIMIT, OPT_MACHINEID,
 	OPT_DCID, OPT_MACHINE_CLASS, OPT_BUGGIFY, OPT_VERSION, OPT_BUILD_FLAGS, OPT_CRASHONERROR, OPT_HELP, OPT_NETWORKIMPL, OPT_NOBUFSTDOUT, OPT_BUFSTDOUTERR,
 	OPT_TRACECLOCK, OPT_NUMTESTERS, OPT_DEVHELP, OPT_PRINT_CODE_PROBES, OPT_ROLLSIZE, OPT_MAXLOGS, OPT_MAXLOGSSIZE, OPT_KNOB, OPT_UNITTESTPARAM, OPT_TESTSERVERS, OPT_TEST_ON_SERVERS, OPT_METRICSCONNFILE,
 	OPT_METRICSPREFIX, OPT_LOGGROUP, OPT_LOCALITY, OPT_IO_TRUST_SECONDS, OPT_IO_TRUST_WARN_ONLY, OPT_FILESYSTEM, OPT_PROFILER_RSS_SIZE, OPT_KVFILE,
 	OPT_TRACE_FORMAT, OPT_WHITELIST_BINPATH, OPT_BLOB_CREDENTIAL_FILE, OPT_CONFIG_PATH, OPT_USE_TEST_CONFIG_DB, OPT_NO_CONFIG_DB, OPT_FAULT_INJECTION, OPT_PROFILER, OPT_PRINT_SIMTIME,
 	OPT_FLOW_PROCESS_NAME, OPT_FLOW_PROCESS_ENDPOINT, OPT_IP_TRUSTED_MASK, OPT_KMS_CONN_DISCOVERY_URL_FILE, OPT_KMS_CONNECTOR_TYPE, OPT_KMS_REST_ALLOW_NOT_SECURE_CONECTION, OPT_KMS_CONN_VALIDATION_TOKEN_DETAILS,
-	OPT_KMS_CONN_GET_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_LATEST_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_BLOB_METADATA_ENDPOINT, OPT_NEW_CLUSTER_KEY, OPT_AUTHZ_PUBLIC_KEY_FILE, OPT_USE_FUTURE_PROTOCOL_VERSION, OPT_CONSISTENCY_CHECK_URGENT_MODE
+	OPT_KMS_CONN_GET_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_LATEST_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_BLOB_METADATA_ENDPOINT, OPT_NEW_CLUSTER_KEY, OPT_AUTHZ_PUBLIC_KEY_FILE, OPT_USE_FUTURE_PROTOCOL_VERSION, OPT_CONSISTENCY_CHECK_URGENT_MODE,
+	OPT_CACHE_POLICY
 };
 
 CSimpleOpt::SOption g_rgOptions[] = {
@@ -132,6 +134,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
 	{ OPT_PUBLICADDR,            "--public-address",            SO_REQ_SEP },
 	{ OPT_LISTEN,                "-l",                          SO_REQ_SEP },
 	{ OPT_LISTEN,                "--listen-address",            SO_REQ_SEP },
+	{ OPT_CACHE_TYPE,            "--cache-type",                SO_REQ_SEP },
+	{ OPT_CACHE_POLICY,          "--cache-policy",              SO_REQ_SEP },
 #ifdef __linux__
 	{ OPT_FILESYSTEM,           "--data-filesystem",            SO_REQ_SEP },
 	{ OPT_PROFILER_RSS_SIZE,    "--rsssize",                    SO_REQ_SEP },
@@ -1060,6 +1064,8 @@ struct CLIOptions {
 	uint64_t storageMemLimit = 1LL << 30;
 	bool buggifyEnabled = false, faultInjectionEnabled = true, restarting = false;
 	Optional<Standalone<StringRef>> zoneId;
+	KeyValueStoreType cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
+	CachePolicy cachePolicy = CachePolicy::NONE;
 	Optional<Standalone<StringRef>> dcId;
 	ProcessClass processClass = ProcessClass(ProcessClass::UnsetClass, ProcessClass::CommandLineSource);
 	bool useNet2 = true;
@@ -1507,6 +1513,17 @@ private:
 			case OPT_MACHINE_CLASS:
 				sRole = args.OptionArg();
 				processClass = ProcessClass(sRole, ProcessClass::CommandLineSource);
+				if(processClass == ProcessClass::TransientStorageClass) {
+					cacheType = KeyValueStoreType(KeyValueStoreType::Cache);
+					processClass._class = ProcessClass::StorageClass;
+					// fprintf(stderr, "ERROR: Unknown machine class `%s'\n", sRole);
+				} else if(processClass == ProcessClass::PersisitentStorageClass || processClass == ProcessClass::StorageClass) {
+					cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
+					processClass._class == ProcessClass::ClassType::StorageClass;
+				} else {
+					cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
+				}
+				fprintf(stderr,"cache Parse After: %s %s\n",processClass.toString().c_str(), cacheType.toString().c_str());
 				if (processClass == ProcessClass::InvalidClass) {
 					fprintf(stderr, "ERROR: Unknown machine class `%s'\n", sRole);
 					printHelpTeaser(argv[0]);
@@ -1515,6 +1532,44 @@ private:
 				break;
 			case OPT_KEY:
 				targetKey = args.OptionArg();
+				break;
+						case OPT_CACHE_TYPE:
+				argStr=args.OptionArg();
+				if(argStr=="vedis"){
+					cacheType = KeyValueStoreType(KeyValueStoreType::Vedis);
+					
+				}
+				else if(argStr=="memcached"){
+					cacheType = KeyValueStoreType(KeyValueStoreType::Memcached);
+					//
+				}else if(argStr=="memory"){
+					cacheType = KeyValueStoreType(KeyValueStoreType::MEMORY);
+					//
+				}else if(argStr=="hybrid"){
+					cacheType = KeyValueStoreType(KeyValueStoreType::HYBRID);
+					//
+				}else if(argStr=="cache"){
+					cacheType = KeyValueStoreType(KeyValueStoreType::Cache);
+					//
+				}
+				else{
+					fprintf(stderr, "ERROR: memoryType not implmemented \n");
+					printHelpTeaser(argv[0]);
+					flushAndExit(FDB_EXIT_ERROR);
+				}
+				
+				break;
+			case OPT_CACHE_POLICY:
+				argStr=args.OptionArg();
+				if(argStr=="LRU") {
+					cachePolicy = CachePolicy::LRU;
+				} else if(argStr == "CAMP") {
+					cachePolicy = CachePolicy::CAMP;
+				} else{
+					fprintf(stderr, "ERROR: Cache Policy not implmemented \n");
+					printHelpTeaser(argv[0]);
+					flushAndExit(FDB_EXIT_ERROR);
+				}
 				break;
 			case OPT_MEMLIMIT:
 				ti = parse_with_suffix(args.OptionArg(), "MiB");
@@ -2123,6 +2178,11 @@ int main(int argc, char* argv[]) {
 		if (environmentKnobOptions.length()) {
 			environmentKnobOptions.pop_back();
 		}
+		char * StoreTypeStrings[]={ "SSD_BTREE_V1", "MEMORY", "SSD_BTREE_V2",
+									"SSD_REDWOOD_V1","MEMORY_RADIXTREE","SSD_ROCKSDB_V1",
+									"SSD_SHARDED_ROCKSDB","NONE","Memcached","Vedis","Cache", "Hybrid"
+									};
+		char * CachePolicyStrings[] = { "NONE", "LRU","CAMP"};
 
 		TraceEvent("ProgramStart")
 		    .setMaxEventLength(12000)
@@ -2146,6 +2206,8 @@ int main(int argc, char* argv[]) {
 		    .detail("MemoryLimit", opts.memLimit)
 		    .detail("VirtualMemoryLimit", opts.virtualMemLimit)
 		    .detail("ProtocolVersion", currentProtocolVersion())
+			.detail("CacheType",StoreTypeStrings[opts.cacheType])
+			.detail("CachePolicy",CachePolicyStrings[static_cast<int>(opts.cachePolicy)])
 		    .trackLatest("ProgramStart");
 
 		Error::init();
@@ -2343,7 +2405,9 @@ int main(int argc, char* argv[]) {
 				                      opts.configPath,
 				                      opts.manualKnobOverrides,
 				                      opts.configDBType,
-				                      opts.consistencyCheckUrgentMode));
+				                      opts.consistencyCheckUrgentMode,
+									  opts.cacheType,
+									  opts.cachePolicy));
 				actors.push_back(histogramReport());
 				// actors.push_back( recurring( []{}, .001 ) );  // for ASIO latency measurement
 

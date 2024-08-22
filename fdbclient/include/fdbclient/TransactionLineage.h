@@ -31,7 +31,8 @@ struct TransactionLineage : LineageProperties<TransactionLineage> {
 		WatchValue,
 		GetConsistentReadVersion,
 		Commit,
-		GetKeyServersLocations
+		GetKeyServersLocations,
+		GetMultiKeyValues
 	};
 	static constexpr std::string_view name = "Transaction"sv;
 	UID txID;
@@ -78,6 +79,9 @@ struct TransactionLineageCollector : IALPCollector<TransactionLineage> {
 				break;
 			case Operation::GetKeyServersLocations:
 				res["operation"sv] = "GetKeyServersLocations"sv;
+				break;
+			case Operation::GetMultiKeyValues:
+				res["operation"sv] = "GetMultiKeyValues"sv;
 				break;
 			}
 		}

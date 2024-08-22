@@ -313,6 +313,7 @@ protected:
 	UID distributorId;
 
 	LocalityMap<UID> machineLocalityMap; // locality info of machines
+	LocalityMap<UID> cacheLocalityMap, sqliteLocalityMap;
 
 	Reference<DDConfiguration::RangeConfigMapSnapshot> userRangeConfig;
 	CoalescedKeyRangeMap<bool> underReplication;

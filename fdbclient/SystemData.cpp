@@ -920,6 +920,46 @@ StorageServerInterface decodeServerListValue(ValueRef const& value) {
 	return decodeServerListValueFB(value);
 }
 
+const KeyRangeRef serverCacheTypeKeys("\xff/serverCacheType/"_sr, "\xff/serverCacheType0"_sr);
+const KeyRef serverCacheTypePrefix = serverCacheTypeKeys.begin;
+
+const Key serverCacheTypeKeyFor(UID serverID) {
+	BinaryWriter wr(Unversioned());
+	wr.serializeBytes(serverCacheTypeKeys.begin);
+	wr << serverID;
+	return wr.toValue();
+}
+
+const Value serverCacheTypeValue(KeyValueStoreType const& cacheType) {
+	auto protocolVersion = currentProtocolVersion();
+	protocolVersion.addObjectSerializerFlag();
+	return ObjectWriter::toValue(cacheType, IncludeVersion(protocolVersion));
+}
+
+UID decodeServerCacheTypeKey(KeyRef const& key) {
+	UID serverID;
+	BinaryReader rd(key.removePrefix(serverCacheTypeKeys.begin), Unversioned());
+	rd >> serverID;
+	return serverID;
+}
+KeyValueStoreType decodeServerCacheTypeValueFB(ValueRef const& value) {
+	KeyValueStoreType s;
+	ObjectReader reader(value.begin(), IncludeVersion());
+	reader.deserialize(s);
+	return s;
+}
+KeyValueStoreType decodeServerCacheTypeValue(ValueRef const& value) {
+	KeyValueStoreType s;
+	BinaryReader reader(value, IncludeVersion());
+
+	if (!reader.protocolVersion().hasStorageInterfaceReadiness()) {
+		reader >> s;
+		return s;
+	}
+
+	return decodeServerCacheTypeValueFB(value);
+}
+
 Value swVersionValue(SWVersion const& swversion) {
 	auto protocolVersion = currentProtocolVersion();
 	protocolVersion.addObjectSerializerFlag();

@@ -1060,6 +1060,31 @@ FDBFuture* fdb_transaction_get_range_impl(FDBTransaction* tr,
 	                    .extractPtr());
 }
 
+extern  "C" DLLEXPORT FDBFuture* fdb_transaction_get_multi(FDBTransaction* tr,
+                                                         const uint8_t**key,
+														 int*single_key_length,
+														 uint64_t length,
+                                                         fdb_bool_t snapshot,
+														 int policy
+                                                         ) {
+	//FDBFuture* r = validate_and_update_parameters(limit, target_bytes, mode, iteration, reverse);
+	FDBFuture* r = nullptr;
+	if (r != nullptr)
+		return r;
+	Standalone<VectorRef<KeyRef>> key_vr;
+	for(int i = 0;i<length;i++){
+		KeyRef keyr(key[i], single_key_length[i]);
+		Key keyy(keyr);
+		// printf("fdb_c: %d %d keyref: %d\n", key[i][0], single_key_length[i], keyr.size());
+
+		key_vr.push_back_deep(key_vr.arena(),keyy);
+	}
+	// printf("inside fdb_c line 1078\n");
+
+	return (FDBFuture*)(TXN(tr)->getMulti(key_vr,snapshot,policy).extractPtr());
+
+}
+
 extern "C" DLLEXPORT FDBFuture* fdb_transaction_get_mapped_range(FDBTransaction* tr,
                                                                  uint8_t const* begin_key_name,
                                                                  int begin_key_name_length,
@@ -1138,6 +1163,57 @@ extern "C" DLLEXPORT void fdb_transaction_set(FDBTransaction* tr,
                                               uint8_t const* value,
                                               int value_length) {
 	CATCH_AND_DIE(TXN(tr)->set(KeyRef(key_name, key_name_length), ValueRef(value, value_length)););
+}
+
+extern "C" DLLEXPORT void fdb_transaction_set_with_c(FDBTransaction* tr,
+                                              uint8_t const* key_name,
+                                              int key_name_length,
+                                              uint8_t const* value,
+                                              int value_length,
+											  int64_t cost
+											  ) {
+	
+	if(key_name[0]=='\x00' && cost > 0) {
+		Key key = KeyRef(key_name, key_name_length);
+		// printf("SetCacheKey: %d %s\n", key.size(), key.toString().c_str());
+		Value _value = ValueRef(value, value_length);
+		static char prefix[] = "\x00__cost12345678";
+		memcpy(prefix+7, &cost, sizeof(cost));
+		StringRef prefix_c = StringRef((uint8_t*)prefix, 15);
+		// StringRef prefix = StringRef((uint8_t*)&cost,8).withPrefix(StringRef("\x00__cost"_sr));
+		_value = _value.withPrefix(prefix_c);
+		// printf("SetCacheValue:\n");
+		// for(int i=0;i<_value.size();i++) {
+		// 	printf("|%c|", _value.begin()[i]);
+		// }
+		// printf("\n");
+		// for(int i=0;i<_value.size();i++) {
+		// 	printf("|%u|", _value.begin()[i]);
+		// }
+		CATCH_AND_DIE(TXN(tr)->set(key, _value););
+	} else {
+		CATCH_AND_DIE(TXN(tr)->set(KeyRef(key_name, key_name_length), ValueRef(value, value_length)););
+	}
+	
+	// printf("%ld",cost);
+	// CATCH_AND_DIE(TXN(tr)->set(KeyRef(key_name, key_name_length), ValueRef(value, value_length)););
+}
+
+extern "C" DLLEXPORT void fdb_transaction_set_cache(FDBTransaction* tr,
+                                              uint8_t const* key_name,
+                                              int key_name_length,
+                                              uint8_t const* value,
+                                              int value_length,
+											  uint64_t cost) {
+	Key key = KeyRef(key_name, key_name_length);
+	Value _value = ValueRef(value, value_length);
+	printf("SetCache: %s\n", key_name);
+	if(key.startsWith("\x01"_sr)) {
+		StringRef prefix = StringRef((uint8_t*)&cost,8).withPrefix(StringRef("\x01__cost"_sr));
+		_value = _value.withPrefix(prefix);
+		printf("SetCache: %s\n", _value.toString().c_str());
+	}
+	CATCH_AND_DIE(TXN(tr)->set(key, _value););
 }
 
 extern "C" DLLEXPORT void fdb_transaction_atomic_op(FDBTransaction* tr,

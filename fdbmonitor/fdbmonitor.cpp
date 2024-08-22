@@ -1033,6 +1033,11 @@ void load_conf(const char* confpath, uid_t& uid, gid_t& gid, sigset_t* mask, fdb
 
 					if (cmd->fork_retry_time <= timer()) {
 						log_msg(SevInfo, "Starting %s\n", i.pItem);
+						char ** argv = cmd->argv;
+						while (*argv != nullptr) {
+							log_msg(SevInfo, "argv %s\n", *argv);
+							++argv;
+						}
 						start_process(cmd, id, uid, gid, 0, mask);
 					}
 				}
@@ -1356,7 +1361,8 @@ int main(int argc, char** argv) {
 	std::vector<const char*> additional_watch_paths;
 
 	CSimpleOpt args(argc, argv, g_rgOptions, SO_O_NOERR | SO_O_HYPHEN_TO_UNDERSCORE);
-
+	
+	printf("inside fdbmonitor\n");
 	while (args.Next()) {
 		if (args.LastError() == SO_SUCCESS) {
 			switch (args.OptionId()) {
@@ -1622,6 +1628,7 @@ int main(int argc, char** argv) {
 			}
 
 			load_conf(confpath.c_str(), uid, gid, &normal_mask, &rfds, &maxfd);
+			printf("finish loading conf file");
 			reload_additional_watches = false;
 #elif defined(__APPLE__) || defined(__FreeBSD__)
 			load_conf(confpath.c_str(), uid, gid, &normal_mask, watched_fds, &maxfd);
