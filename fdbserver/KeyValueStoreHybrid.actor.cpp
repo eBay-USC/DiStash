@@ -2,7 +2,7 @@
 #include <map>
 #include <unordered_map>
 #include "fdbclient/FDBTypes.h"
-#include "fdbserver/IKeyValueStore.h"
+#include "fdbclient/IKeyValueStore.h"
 #include "fdbserver/Knobs.h"
 #include "flow/actorcompiler.h" // This must be the last #include.
 
@@ -137,7 +137,7 @@ public:
 
 	// Shard management APIs.
 	// Adds key range to a physical shard.
-	Future<Void> addRange(KeyRangeRef range, std::string id) override{ 
+	Future<Void> addRange(KeyRangeRef range, std::string id, bool active = true) override{ 
         return sqlite->addRange(range, id); 
     }
 

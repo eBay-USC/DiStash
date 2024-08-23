@@ -14238,8 +14238,10 @@ ACTOR Future<Void> storageServer(IKeyValueStore* persistentData,
                                  Reference<AsyncVar<ServerDBInfo> const> db,
                                  std::string folder,
                                  Promise<Void> recovered,
-                                 Reference<IClusterConnectionRecord> connRecord) {
-	state StorageServer self(persistentData, db, ssi);
+                                 Reference<IClusterConnectionRecord> connRecord,
+								 KeyValueStoreType cacheType,
+								 CachePolicy cachePolicy) {
+	state StorageServer self(persistentData, db, ssi, cacheType, cachePolicy);
 	state Future<Void> ssCore;
 	self.folder = folder;
 	self.checkpointFolder = joinPath(self.folder, serverCheckpointFolder);

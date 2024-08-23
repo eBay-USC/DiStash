@@ -800,7 +800,7 @@ ACTOR Future<ISimulator::KillType> simulatedFDBDRebooter(Reference<IClusterConne
 					                       {},
 					                       configDBType,
 					                       false,
-										   cacheType.
+										   cacheType,
 										   cachePolicy));
 				}
 				if (processRunBackupAgent(processMode)) {

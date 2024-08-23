@@ -241,7 +241,7 @@ public:
 	}
 
 	ACTOR template <class Iter>
-	static Future<Key> read(ReadYourWritesTransaction* ryw, GetKeyReq read, Iter* it) {
+	static Future<Key> read(ReadYourWritesTransaction* ryw, GetKeyReq read, Iter* it, LoadBalancePolicy policy=FIRST) {
 		if (read.key.offset > 0) {
 			RangeResult result =
 			    wait(getRangeValue(ryw, read.key, firstGreaterOrEqual(ryw->getMaxReadKey()), GetRangeLimits(1), it));

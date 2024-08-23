@@ -495,7 +495,6 @@ public:
 	                                   GetRangeLimits limits,
 	                                   bool snapshot = false,
 	                                   bool reverse = false) override;
-	ThreadFuture<RangeResult> getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot=false,int policy=0) override;
 	ThreadFuture<MappedRangeResult> getMappedRange(const KeySelectorRef& begin,
 	                                               const KeySelectorRef& end,
 	                                               const StringRef& mapper,
@@ -734,6 +733,7 @@ public:
 	                                   GetRangeLimits limits,
 	                                   bool snapshot = false,
 	                                   bool reverse = false) override;
+	ThreadFuture<RangeResult> getMulti(const Standalone<VectorRef<StringRef>> &keys,bool snapshot=false,int policy=0) override;
 	ThreadFuture<MappedRangeResult> getMappedRange(const KeySelectorRef& begin,
 	                                               const KeySelectorRef& end,
 	                                               const StringRef& mapper,

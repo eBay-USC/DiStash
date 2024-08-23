@@ -1243,7 +1243,7 @@ ACTOR Future<Void> storageServer(
     std::string folder,
     Promise<Void> recovered,
     Reference<IClusterConnectionRecord>
-        connRecord
+        connRecord,
 	KeyValueStoreType cacheType,
 	CachePolicy cachePolicy); // changes pssi->id() to be the recovered ID); // changes pssi->id() to be the recovered ID
 ACTOR Future<Void> masterServer(MasterInterface mi,

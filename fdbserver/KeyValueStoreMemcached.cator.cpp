@@ -1,6 +1,6 @@
 // #include <libmemcached/memcached.h>
 #include "fdbclient/FDBTypes.h"
-#include "fdbserver/IKeyValueStore.h"
+#include "fdbclient/IKeyValueStore.h"
 #include "fdbserver/Knobs.h"
 #include "flow/actorcompiler.h" // This must be the last #include.
 
