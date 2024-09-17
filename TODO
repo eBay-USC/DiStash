@@ -1,0 +1,5 @@
+### Modification for Configuration Files
+- [ ] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
+- [ ]  Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`)
+- [ ]  During initialization, check whether there are conflicts in `storageTypePrefix`. Then write the prefix to `storageTypePrefix`, checking whether there are conflicts. 
+
