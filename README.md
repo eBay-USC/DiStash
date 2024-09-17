@@ -1,5 +1,29 @@
 <img alt="FoundationDB logo" src="documentation/FDB_logo.png?raw=true" width="400">
 
+## TODO
+### Modification for Configuration Files
+- [ ] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
+- [ ] Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`)
+- [ ] During initialization, check whether there are conflicts in `storageTypePrefix`. Then write the prefix to `storageTypePrefix`, checking whether there are conflicts. 
+
+
+### Modification for having n DataDistributor Queue
+There are two future promises in DD: `relocationProducer` and `relocationConsumer`. All the `RelocateShard` requests will be sent to `relocationProducer`, and it will then be sent to `relocationConsumer` for DD Queue.
+- [ ] Create n DD Queues inside a vector, and n `relocationConsumer` promises for each queue.
+- [ ] Create an new actor to receive requests from Producer and forward all the requests to corresponding consumer depending on the prefix.
+- [ ] Create n `startMoveKeysParallelismLock` and n `finishMoveKeysParallelismLock` and n `MoveKeysLock`
+
+
+### Modification for having n TeamCollections
+- [ ] Erase the previous modification on `TeamCollections`.
+- [ ] Disable StorageWiggler first. Storage wiggle is a feature that forces the data distributor to constantly build new storage teams when the cluster is healthy.
+- [ ] Create n `TeamCollections` vectors, one storage type per vector. The number of `teamcollection` inside each vector equal to the number of DC. Passing the DD Queue corresponding vector.
+- [ ] Modify `shouldHandleServer` function, only handle the corresponding server
+
+
+
+
+
 ![Build Status](https://codebuild.us-west-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiVjVzb1RQNUZTaGxGNm9iUnk4OUZ1d09GdTMzZnVOT1YzaUU1RU1xR2o2TENRWFZjb3ZrTHJEcngrZVdnNE40bXJJVDErOGVwendIL3lFWFY3Y3oxQmdjPSIsIml2UGFyYW1ldGVyU3BlYyI6IlJUbWhnaUlJVXRORUNJTjQiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
 
 FoundationDB is a distributed database designed to handle large volumes of structured data across clusters of commodity servers. It organizes data as an ordered key-value store and employs ACID transactions for all operations. It is especially well-suited for read/write workloads but also has excellent performance for write-intensive workloads. Users interact with the database using API language binding.
