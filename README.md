@@ -4,7 +4,7 @@
 ### Modification for Configuration Files
 - [x] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
 - [x] Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`). The key is `\xff/storageType/type`, the value is the prefix.
-- [ ] ~~During initialization, check whether there are conflicts in `storageTypePrefix`.~~ 
+- [ ] During initialization, check whether there are conflicts between configuration files and system metadata keyspace.
 
 
 ### Modification for having n DataDistributor Queue
@@ -21,6 +21,8 @@ There are two future promises in DD: `relocationProducer` and `relocationConsume
 - [ ] Create n `TeamCollections` vectors, one storage type per vector. The number of `teamcollection` inside each vector equal to the number of DC. Passing the DD Queue corresponding vector.
 - [ ] Modify `shouldHandleServer` function, only handle the corresponding server
 
+### Debuging
+- [ ] Unitest for Data Distributor.
 
 
 
