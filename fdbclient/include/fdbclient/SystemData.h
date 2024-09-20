@@ -296,8 +296,8 @@ StorageServerInterface decodeServerListValue(ValueRef const&);
 
 extern const KeyRangeRef serverCacheTypeKeys;
 extern const KeyRef serverCacheTypePrefix;
-const Key serverCacheTypeKeyFor(UID serverID);
-const Value serverCacheTypeValue(KeyValueStoreType const&);
+const Key serverCacheTypeKeyFor(KeyValueStoreType const& cacheType);
+const Value serverCacheTypeValue(KeyRef const& cachePrefix);
 UID decodeServerCacheTypeKey(KeyRef const&);
 KeyValueStoreType decodeServerCacheTypeValue(ValueRef const&);
 

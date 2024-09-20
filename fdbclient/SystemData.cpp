@@ -923,17 +923,18 @@ StorageServerInterface decodeServerListValue(ValueRef const& value) {
 const KeyRangeRef serverCacheTypeKeys("\xff/serverCacheType/"_sr, "\xff/serverCacheType0"_sr);
 const KeyRef serverCacheTypePrefix = serverCacheTypeKeys.begin;
 
-const Key serverCacheTypeKeyFor(UID serverID) {
+const Key serverCacheTypeKeyFor(KeyValueStoreType const& cacheType) {
 	BinaryWriter wr(Unversioned());
-	wr.serializeBytes(serverCacheTypeKeys.begin);
+	wr.serializeBytes(cacheType.toString().c_str(), cacheType.toString().size());
 	wr << serverID;
 	return wr.toValue();
 }
 
-const Value serverCacheTypeValue(KeyValueStoreType const& cacheType) {
-	auto protocolVersion = currentProtocolVersion();
-	protocolVersion.addObjectSerializerFlag();
-	return ObjectWriter::toValue(cacheType, IncludeVersion(protocolVersion));
+const Value serverCacheTypeValue(KeyRef const& cachePrefix) {
+	BinaryWriter wr(Unversioned());
+	wr.serializeBytes(cachePrefix);
+	wr << serverID;
+	return wr.toValue();
 }
 
 UID decodeServerCacheTypeKey(KeyRef const& key) {
@@ -959,6 +960,7 @@ KeyValueStoreType decodeServerCacheTypeValue(ValueRef const& value) {
 
 	return decodeServerCacheTypeValueFB(value);
 }
+
 
 Value swVersionValue(SWVersion const& swversion) {
 	auto protocolVersion = currentProtocolVersion();

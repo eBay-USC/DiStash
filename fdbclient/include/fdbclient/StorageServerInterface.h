@@ -94,6 +94,7 @@ struct StorageServerInterface {
 	UID uniqueID;
 	Optional<UID> tssPairID;
 	KeyValueStoreType cacheType = KeyValueStoreType::NONE;
+	ExtraType extraType;
 
 	PublicRequestStream<struct GetValueRequest> getValue;
 	PublicRequestStream<struct GetKeyRequest> getKey;

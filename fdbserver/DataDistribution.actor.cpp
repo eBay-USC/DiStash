@@ -370,11 +370,17 @@ public:
 
 	// Optional components that can be set after ::init(). They're optional when test, but required for DD being
 	// fully-functional.
-	DDTeamCollection* teamCollection;
+
+	KeyRangeMap<int> storagePrefixPos;
+	std::unordered_map<Value, Key> storageTypePrefixes;
+
+
+	std::vector<DDTeamCollection*> teamCollection;
 	Reference<ShardsAffectedByTeamFailure> shardsAffectedByTeamFailure;
 	// consumer is a yield stream from producer. The RelocateShard is pushed into relocationProducer and popped from
 	// relocationConsumer (by DDQueue)
-	PromiseStream<RelocateShard> relocationProducer, relocationConsumer;
+	PromiseStream<RelocateShard> relocationProducer;
+	std::vector<PromiseStream<RelocateShard>> relocationConsumer;
 	Reference<PhysicalShardCollection> physicalShardCollection;
 
 	Promise<Void> initialized;
@@ -501,6 +507,36 @@ public:
 		}
 	}
 
+	ACTOR static Future<Void> updateStorageTypePrefix(Reference<DataDistributor> self) {
+		state Future<Void> checkSignal = delay(SERVER_KNOBS->SERVER_LIST_DELAY, TaskPriority::DataDistributionLaunch);
+		state Future<RangeResult> storageTypePrefix = Never();
+
+		loop {
+			choose {
+				when(wait(checkSignal)) {
+					checkSignal = Never();
+					state Transaction tr(self->context);
+					storageTypePrefix = tr.getRange(serverCacheTypeKeys);
+					// storagePrefixPos
+				}
+				when(RangeResult prefixes = wait(storageTypePrefix)) {
+					for(KeyValueRef i =prefixes.begin(); i!= prefixes.end();i++) {
+						if(self->storageTypePrefixes.find(i.key) == self->storageTypePrefixes.end() ) continue;
+						// self->storagePrefixes.insert(i.key, i.value);
+						KeyRange prefixRange(i.key, i.key.withSuffix("\xff"));
+						if(self->storagePrefixPos.intersectingRanges(prefixRange)!=self->storagePrefixPos.lastItem()) continue;
+						self->storageTypePrefixes[i.key] = i.value;
+						self->storagePrefixPos.insert(prefixRange, self->storageTypePrefixes.size()-1);
+						init_DDQueue();
+						init_TeamCollection();
+					}
+				}
+			}
+		}
+		return Void();
+
+	}
+
 	// Initialize the required internal states of DataDistributor from system metadata. It's necessary before
 	// DataDistributor start working. Doesn't include initialization of optional components, like TenantCache, DDQueue,
 	// Tracker, TeamCollection. The components should call its own ::init methods.
@@ -509,6 +545,10 @@ public:
 			TraceEvent("DDInitTakingMoveKeysLock", self->ddId).log();
 			wait(self->takeMoveKeysLock());
 			TraceEvent("DDInitTookMoveKeysLock", self->ddId).log();
+
+			
+
+
 
 			// AuditStorage does not rely on DatabaseConfiguration
 			// AuditStorage read neccessary info purely from system key space

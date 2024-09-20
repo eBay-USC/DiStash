@@ -5633,7 +5633,7 @@ void DDTeamCollection::addServer(StorageServerInterface newServer,
 	    .detail("ProcessID", newServer.locality.processId())
 	    .detail("ProcessClass", processClass.toString())
 	    .detail("WaitFailureToken", newServer.waitFailure.getEndpoint().token)
-	    .detail("Address", newServer.waitFailure.getEndpoint().getPrimaryAddress());
+	    .detail("Address", newServer.waitFailure.getEndpoint().getPrimaryAddress())
 		.detail("CacheType", newServer.cacheType);
 
 	auto& r = server_and_tss_info[newServer.id()] = makeReference<TCServerInfo>(

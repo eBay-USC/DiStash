@@ -784,8 +784,10 @@ ACTOR Future<ISimulator::KillType> simulatedFDBDRebooter(Reference<IClusterConne
 					futures.push_back(FlowTransport::transport().bind(n, n));
 				}
 				if (processRunFDBD(processMode)) {
+					
 					KeyValueStoreType cacheType  = KeyValueStoreType(KeyValueStoreType::NONE);
 					CachePolicy cachePolicy = CachePolicy::NONE;
+					ExtraType extraType;
 					futures.push_back(fdbd(connRecord,
 					                       localities,
 					                       processClass,
@@ -800,8 +802,7 @@ ACTOR Future<ISimulator::KillType> simulatedFDBDRebooter(Reference<IClusterConne
 					                       {},
 					                       configDBType,
 					                       false,
-										   cacheType,
-										   cachePolicy));
+										   extraType));
 				}
 				if (processRunBackupAgent(processMode)) {
 					futures.push_back(runBackup(connRecord));

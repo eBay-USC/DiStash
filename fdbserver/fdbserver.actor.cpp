@@ -120,7 +120,7 @@ enum {
 	OPT_TRACE_FORMAT, OPT_WHITELIST_BINPATH, OPT_BLOB_CREDENTIAL_FILE, OPT_CONFIG_PATH, OPT_USE_TEST_CONFIG_DB, OPT_NO_CONFIG_DB, OPT_FAULT_INJECTION, OPT_PROFILER, OPT_PRINT_SIMTIME,
 	OPT_FLOW_PROCESS_NAME, OPT_FLOW_PROCESS_ENDPOINT, OPT_IP_TRUSTED_MASK, OPT_KMS_CONN_DISCOVERY_URL_FILE, OPT_KMS_CONNECTOR_TYPE, OPT_KMS_REST_ALLOW_NOT_SECURE_CONECTION, OPT_KMS_CONN_VALIDATION_TOKEN_DETAILS,
 	OPT_KMS_CONN_GET_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_LATEST_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_BLOB_METADATA_ENDPOINT, OPT_NEW_CLUSTER_KEY, OPT_AUTHZ_PUBLIC_KEY_FILE, OPT_USE_FUTURE_PROTOCOL_VERSION, OPT_CONSISTENCY_CHECK_URGENT_MODE,
-	OPT_CACHE_POLICY
+	OPT_CACHE_POLICY, OPT_STORAGE_PREFIX, OPT_STORAGE_TYPE
 };
 
 CSimpleOpt::SOption g_rgOptions[] = {
@@ -134,6 +134,8 @@ CSimpleOpt::SOption g_rgOptions[] = {
 	{ OPT_PUBLICADDR,            "--public-address",            SO_REQ_SEP },
 	{ OPT_LISTEN,                "-l",                          SO_REQ_SEP },
 	{ OPT_LISTEN,                "--listen-address",            SO_REQ_SEP },
+	{ OPT_STORAGE_TYPE,          "--stoarge-type",             	SO_REQ_SEP },
+	{ OPT_STORAGE_PREFIX,        "--stoarge-prefix",            SO_REQ_SEP },
 	{ OPT_CACHE_TYPE,            "--cache-type",                SO_REQ_SEP },
 	{ OPT_CACHE_POLICY,          "--cache-policy",              SO_REQ_SEP },
 #ifdef __linux__
@@ -1065,6 +1067,7 @@ struct CLIOptions {
 	bool buggifyEnabled = false, faultInjectionEnabled = true, restarting = false;
 	Optional<Standalone<StringRef>> zoneId;
 	KeyValueStoreType cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
+	Key storagePrefix;
 	CachePolicy cachePolicy = CachePolicy::NONE;
 	Optional<Standalone<StringRef>> dcId;
 	ProcessClass processClass = ProcessClass(ProcessClass::UnsetClass, ProcessClass::CommandLineSource);
@@ -1519,7 +1522,7 @@ private:
 					// fprintf(stderr, "ERROR: Unknown machine class `%s'\n", sRole);
 				} else if(processClass == ProcessClass::PersisitentStorageClass || processClass == ProcessClass::StorageClass) {
 					cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
-					processClass._class == ProcessClass::ClassType::StorageClass;
+					processClass._class = ProcessClass::ClassType::StorageClass;
 				} else {
 					cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
 				}
@@ -1533,7 +1536,7 @@ private:
 			case OPT_KEY:
 				targetKey = args.OptionArg();
 				break;
-						case OPT_CACHE_TYPE:
+			case OPT_CACHE_TYPE:
 				argStr=args.OptionArg();
 				if(argStr=="vedis"){
 					cacheType = KeyValueStoreType(KeyValueStoreType::Vedis);
@@ -1571,6 +1574,13 @@ private:
 					flushAndExit(FDB_EXIT_ERROR);
 				}
 				break;
+			case OPT_STORAGE_PREFIX: {
+				argStr=args.OptionArg();
+				storagePrefix = Key(argStr);
+				fprintf(stderr, "OPT_STORAGE_PREFIX `%s'\n", storagePrefix.toString().c_str());
+				break;
+			}
+				
 			case OPT_MEMLIMIT:
 				ti = parse_with_suffix(args.OptionArg(), "MiB");
 				if (!ti.present()) {
@@ -2392,6 +2402,7 @@ int main(int argc, char* argv[]) {
 					dataFolder = format("fdb/%d/", opts.publicAddresses.address.port); // SOMEDAY: Better default
 
 				std::vector<Future<Void>> actors(listenErrors.begin(), listenErrors.end());
+				ExtraType extraType(opts.cacheType, opts.cacheType, opts.storagePrefix, opts.cachePolicy);
 				actors.push_back(fdbd(opts.connectionFile,
 				                      opts.localities,
 				                      opts.processClass,
@@ -2406,8 +2417,7 @@ int main(int argc, char* argv[]) {
 				                      opts.manualKnobOverrides,
 				                      opts.configDBType,
 				                      opts.consistencyCheckUrgentMode,
-									  opts.cacheType,
-									  opts.cachePolicy));
+									  extraType));
 				actors.push_back(histogramReport());
 				// actors.push_back( recurring( []{}, .001 ) );  // for ASIO latency measurement
 

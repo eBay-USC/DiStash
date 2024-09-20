@@ -2,13 +2,14 @@
 
 ## TODO
 ### Modification for Configuration Files
-- [ ] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
-- [ ] Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`)
-- [ ] During initialization, check whether there are conflicts in `storageTypePrefix`. Then write the prefix to `storageTypePrefix`, checking whether there are conflicts. 
+- [x] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
+- [x] Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`). The key is `\xff/storageType/type`, the value is the prefix.
+- [ ] ~~During initialization, check whether there are conflicts in `storageTypePrefix`. ~~ 
 
 
 ### Modification for having n DataDistributor Queue
 There are two future promises in DD: `relocationProducer` and `relocationConsumer`. All the `RelocateShard` requests will be sent to `relocationProducer`, and it will then be sent to `relocationConsumer` for DD Queue.
+- [x] Listen to the storageTypePrefix space, once there are change in thiis keyspace, retrieve the n storage types in system keyspace, check whether there are conflicts. 
 - [ ] Create n DD Queues inside a vector, and n `relocationConsumer` promises for each queue.
 - [ ] Create an new actor to receive requests from Producer and forward all the requests to corresponding consumer depending on the prefix.
 - [ ] Create n `startMoveKeysParallelismLock` and n `finishMoveKeysParallelismLock` and n `MoveKeysLock`

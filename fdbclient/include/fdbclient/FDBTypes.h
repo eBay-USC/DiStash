@@ -1049,6 +1049,15 @@ enum class CachePolicy {
 	CAMP
 };
 
+struct ExtraType {
+	CachePolicy cachePolicy = CachePolicy::NONE;
+	KeyValueStoreType storageType, cacheType;
+	Key storagePrefix;
+	ExtraType() {}
+	ExtraType(KeyValueStoreType storageType, KeyValueStoreType cacheType, Key storagePrefix, CachePolicy cachePolicy = CachePolicy::NONE) : storageType(storageType), storagePrefix(storagePrefix), cachePolicy(cachePolicy), cacheType(cacheType) {}
+
+};
+
 struct TLogVersion {
 	enum Version {
 		UNSET = 0,

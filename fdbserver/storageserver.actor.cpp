@@ -536,7 +536,7 @@ public:
 };
 
 struct StorageServerDisk {
-	explicit StorageServerDisk(struct StorageServer* data, IKeyValueStore* storage, KeyValueStoreType cacheType, CachePolicy cachePolicy) : data(data), storage(storage) {}
+	explicit StorageServerDisk(struct StorageServer* data, IKeyValueStore* storage, ExtraType extraType) : data(data), storage(storage) {}
 
 	IKeyValueStore* getKeyValueStore() const { return this->storage; }
 
@@ -1309,8 +1309,9 @@ public:
 	Optional<UID> ssPairID; // if this server is an ss, this is the id of its (tss) pair
 	Optional<double> tssFaultInjectTime;
 	bool tssInQuarantine;
-	KeyValueStoreType cacheType;
-	CachePolicy cachePolicy;
+	ExtraType extraType;
+	// KeyValueStoreType cacheType;
+	// CachePolicy cachePolicy;
 
 	Key sk;
 	Reference<AsyncVar<ServerDBInfo> const> db;
@@ -1642,8 +1643,7 @@ public:
 	StorageServer(IKeyValueStore* storage,
 	              Reference<AsyncVar<ServerDBInfo> const> const& db,
 	              StorageServerInterface const& ssi,
-				  KeyValueStoreType cacheType,
-				  CachePolicy cachePolicy)
+				  ExtraType extraType)
 	  : shardAware(false), tlogCursorReadsLatencyHistogram(Histogram::getHistogram(STORAGESERVER_HISTOGRAM_GROUP,
 	                                                                               TLOG_CURSOR_READS_LATENCY_HISTOGRAM,
 	                                                                               Histogram::Unit::milliseconds)),
@@ -1678,7 +1678,7 @@ public:
 	                                                              SS_READ_RANGE_KV_PAIRS_RETURNED_HISTOGRAM,
 	                                                              Histogram::Unit::bytes)),
 	    tag(invalidTag), poppedAllAfter(std::numeric_limits<Version>::max()), cpuUsage(0.0), diskUsage(0.0),
-	    storage(this, storage, cacheType, cachePolicy), shardChangeCounter(0), lastTLogVersion(0), lastVersionWithData(0), restoredVersion(0),
+	    storage(this, storage, extraType), shardChangeCounter(0), lastTLogVersion(0), lastVersionWithData(0), restoredVersion(0),
 	    prevVersion(0), rebootAfterDurableVersion(std::numeric_limits<Version>::max()),
 	    primaryLocality(tagLocalityInvalid), knownCommittedVersion(0), versionLag(0), logProtocol(0),
 	    thisServerID(ssi.id()), tssInQuarantine(false), db(db), actors(false),
@@ -1698,7 +1698,7 @@ public:
 	    busiestWriteTagContext(ssi.id()), counters(this),
 	    storageServerSourceTLogIDEventHolder(
 	        makeReference<EventCacheHolder>(ssi.id().toString() + "/StorageServerSourceTLogID")),
-		 cacheType(cacheType), cachePolicy(cachePolicy)	 {
+		 extraType(extraType)	 {
 		readPriorityRanks = parseStringToVector<int>(SERVER_KNOBS->STORAGESERVER_READTYPE_PRIORITY_MAP, ',');
 		ASSERT(readPriorityRanks.size() > (int)ReadType::MAX);
 		version.initMetric("StorageServer.Version"_sr, counters.cc.getId());
@@ -13937,8 +13937,9 @@ ACTOR Future<Void> replaceInterface(StorageServer* self, StorageServerInterface 
 
 					tr.set(serverListKeyFor(ssi.id()), serverListValue(ssi));
 
-					tr.addReadConflictRange(singleKeyRange(serverCacheTypeKeyFor(ssi.id())));
-					tr.set(serverCacheTypeKeyFor(ssi.id()), serverCacheTypeValue(self->cacheType));
+
+					// tr.addReadConflictRange(singleKeyRange(serverCacheTypeKeyFor(ssi)));
+					tr.set(serverCacheTypeKeyFor(self->extraType.storageType), serverCacheTypeValue(self->extraType.storagePrefix));
 
 					if (rep.newLocality) {
 						tr.addReadConflictRange(tagLocalityListKeys);
@@ -14110,9 +14111,8 @@ ACTOR Future<Void> storageServer(IKeyValueStore* persistentData,
                                  ReplyPromise<InitializeStorageReply> recruitReply,
                                  Reference<AsyncVar<ServerDBInfo> const> db,
                                  std::string folder,
-								 KeyValueStoreType cacheType,
-								 CachePolicy cachePolicy) {
-	state StorageServer self(persistentData, db, ssi, cacheType, cachePolicy);
+								 ExtraType extraType) {
+	state StorageServer self(persistentData, db, ssi, extraType);
 	self.shardAware = persistentData->shardAware();
 	state Future<Void> ssCore;
 	self.initialClusterVersion = startVersion;
@@ -14239,9 +14239,8 @@ ACTOR Future<Void> storageServer(IKeyValueStore* persistentData,
                                  std::string folder,
                                  Promise<Void> recovered,
                                  Reference<IClusterConnectionRecord> connRecord,
-								 KeyValueStoreType cacheType,
-								 CachePolicy cachePolicy) {
-	state StorageServer self(persistentData, db, ssi, cacheType, cachePolicy);
+								 ExtraType extraType) {
+	state StorageServer self(persistentData, db, ssi, extraType);
 	state Future<Void> ssCore;
 	self.folder = folder;
 	self.checkpointFolder = joinPath(self.folder, serverCheckpointFolder);
