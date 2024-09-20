@@ -4,7 +4,7 @@
 ### Modification for Configuration Files
 - [x] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
 - [x] Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`). The key is `\xff/storageType/type`, the value is the prefix.
-- [ ] ~~During initialization, check whether there are conflicts in `storageTypePrefix`. ~~ 
+- [ ] ~~During initialization, check whether there are conflicts in `storageTypePrefix`.~~
 
 
 ### Modification for having n DataDistributor Queue
