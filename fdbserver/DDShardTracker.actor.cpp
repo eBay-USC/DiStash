@@ -906,7 +906,6 @@ static bool shardMergeFeasible(DataDistributionTracker* self, KeyRange const& ke
 	return true;
 }
 
-const KeyRangeRef cacheKeys("\x00"_sr, "\x01"_sr);
 
 static bool shardForwardMergeFeasible(DataDistributionTracker* self, KeyRange const& keys, KeyRangeRef nextRange) {
 	if (keys.end == allKeys.end) {
@@ -917,8 +916,9 @@ static bool shardForwardMergeFeasible(DataDistributionTracker* self, KeyRange co
 		return false;
 	}
 
-	if(cacheKeys.contains(keys) != cacheKeys.contains(nextRange)) {
-		return false;
+	for(int i=0;i<self->customBoundaries.size();i+=2) {
+		KeyRangeRef ranges(self->customBoundaries[i],self->customBoundaries[i+1]);
+		if(ranges.contains(key) != ranges.contains(nextRange)) return false;
 	}
 
 	return shardMergeFeasible(self, keys, nextRange);
@@ -1273,12 +1273,17 @@ ACTOR Future<Void> trackInitialShards(DataDistributionTracker* self, Reference<I
 	// SOMEDAY: Figure out what this priority should actually be
 	wait(delay(0.0, TaskPriority::DataDistribution));
 
-	state std::vector<Key> customBoundaries;
+	// state std::vector<Key> self->customBoundaries;
+	self->customBoundaries.clear();
 	for (auto it : self->userRangeConfig->ranges()) {
-		customBoundaries.push_back(it->range().begin);
+		self->customBoundaries.push_back(it->range().begin);
 	}
-	customBoundaries.push_back("\x00"_sr);
-	customBoundaries.push_back("\x01"_sr);
+	for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
+		self->customBoundaries.push_back(self->storageTypeCollections.prefixes[i]);
+		self->customBoundaries.push_back(self->storageTypeCollections.prefixes[i].withSuffix("\xff"_sr));
+	}
+	// self->customBoundaries.push_back("\x00"_sr);
+	// self->customBoundaries.push_back("\x01"_sr);
 
 	state int s;
 	state int customBoundary = 0;
@@ -1288,13 +1293,13 @@ ACTOR Future<Void> trackInitialShards(DataDistributionTracker* self, Reference<I
 		TraceEvent("TrackInitialShards", self->distributorId)
 		.detail("Begin", beginKey.toString())
 		.detail("End", endKey.toString());
-		while (customBoundary < customBoundaries.size() && customBoundaries[customBoundary] <= beginKey) {
+		while (customBoundary < self->customBoundaries.size() && self->customBoundaries[customBoundary] <= beginKey) {
 			customBoundary++;
 		}
-		while (customBoundary < customBoundaries.size() && customBoundaries[customBoundary] < endKey) {
+		while (customBoundary < self->customBoundaries.size() && self->customBoundaries[customBoundary] < endKey) {
 			restartShardTrackers(
-			    self, KeyRangeRef(beginKey, customBoundaries[customBoundary]), Optional<ShardMetrics>(), true);
-			beginKey = customBoundaries[customBoundary];
+			    self, KeyRangeRef(beginKey, self->customBoundaries[customBoundary]), Optional<ShardMetrics>(), true);
+			beginKey = self->customBoundaries[customBoundary];
 			customBoundary++;
 		}
 		restartShardTrackers(self, KeyRangeRef(beginKey, endKey), Optional<ShardMetrics>(), true);
@@ -1598,7 +1603,9 @@ Future<Void> DataDistributionTracker::run(
     const FutureStream<GetTopKMetricsRequest>& getTopKMetrics,
     const FutureStream<GetMetricsListRequest>& getShardMetricsList,
     const FutureStream<Promise<int64_t>>& getAverageShardBytes,
-    const FutureStream<RebalanceStorageQueueRequest>& triggerStorageQueueRebalance) {
+    const FutureStream<RebalanceStorageQueueRequest>& triggerStorageQueueRebalance,
+	const StorageTypeCollections &storageTypeCollections) {
+	self->storageTypeCollections = storageTypeCollections;
 	self->getShardMetrics = getShardMetrics;
 	self->getTopKMetrics = getTopKMetrics;
 	self->getShardMetricsList = getShardMetricsList;

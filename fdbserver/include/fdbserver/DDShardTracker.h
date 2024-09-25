@@ -79,6 +79,9 @@ public:
 	// Read hot detection
 	PromiseStream<KeyRange> readHotShard;
 
+	const StorageTypeCollections &storageTypeCollections;
+	std::vector<Key> customBoundaries;
+
 	// The reference to trackerCancelled must be extracted by actors,
 	// because by the time (trackerCancelled == true) this memory cannot
 	// be accessed
