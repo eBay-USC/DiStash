@@ -3114,6 +3114,7 @@ public:
 							                self->serverTrackerErrorOut,
 							                infos.readVersion.get(),
 							                *ddEnabledState);
+
 						}
 					}
 
@@ -5608,6 +5609,7 @@ void DDTeamCollection::noHealthyTeams() const {
 }
 
 bool DDTeamCollection::shouldHandleServer(const StorageServerInterface& newServer) const {
+	if(storageType != newServer.extraType.storageType) return false;;
 	return (includedDCs.empty() ||
 	        std::find(includedDCs.begin(), includedDCs.end(), newServer.locality.dcId()) != includedDCs.end() ||
 	        (otherTrackedDCs.present() &&

@@ -11,15 +11,19 @@
 There are two future promises in DD: `relocationProducer` and `relocationConsumer`. All the `RelocateShard` requests will be sent to `relocationProducer`, and it will then be sent to `relocationConsumer` for DD Queue.
 - [x] Listen to the storageTypePrefix space, once there are change in thiis keyspace, retrieve the n storage types in system keyspace, check whether there are conflicts. 
 - [x] Create n DD Queues inside a vector, and n `relocationConsumer` promises for each queue.
-- [ ] Create an new actor to receive requests from Producer and forward all the requests to corresponding consumer depending on the prefix.
-- [ ] Create n `startMoveKeysParallelismLock` and n `finishMoveKeysParallelismLock` and n `MoveKeysLock`
+- [x] Create an new actor to receive requests from Producer and forward all the requests to corresponding consumer depending on the prefix.
+- [x] Create n `startMoveKeysParallelismLock` and n `finishMoveKeysParallelismLock` and n `MoveKeysLock`
 
 
 ### Modification for having n TeamCollections
-- [ ] Erase the previous modification on `TeamCollections`.
-- [ ] Disable StorageWiggler first. Storage wiggle is a feature that forces the data distributor to constantly build new storage teams when the cluster is healthy.
-- [ ] Create n `TeamCollections` vectors, one storage type per vector. The number of `teamcollection` inside each vector equal to the number of DC. Passing the DD Queue corresponding vector.
-- [ ] Modify `shouldHandleServer` function, only handle the corresponding server
+- [x] Erase the previous modification on `TeamCollections`.
+- [x] Disable StorageWiggler first. Storage wiggle is a feature that forces the data distributor to constantly build new storage teams when the cluster is healthy.
+- [x] Create n `TeamCollections` vectors, one storage type per vector. The number of `teamcollection` inside each vector equal to the number of DC. Passing the DD Queue corresponding vector.
+- [x] Modify `shouldHandleServer` function, only handle the corresponding server
+
+### Modification for ShardTracker
+- [ ] Initialize shard division based on the storage type prefix.
+- [ ] Do not merge the shard accross the storage type boundary
 
 ### Debuging
 - [ ] Unitest for Data Distributor.

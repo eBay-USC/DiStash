@@ -255,6 +255,7 @@ protected:
 
 	int healthyTeamCount;
 	Reference<AsyncVar<bool>> zeroHealthyTeams;
+	KeyValueStoreType storageType;
 
 	int optimalTeamCount;
 	AsyncVar<bool> zeroOptimalTeams;
