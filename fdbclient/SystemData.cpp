@@ -923,34 +923,30 @@ StorageServerInterface decodeServerListValue(ValueRef const& value) {
 const KeyRangeRef serverCacheTypeKeys("\xff/serverCacheType/"_sr, "\xff/serverCacheType0"_sr);
 const KeyRef serverCacheTypePrefix = serverCacheTypeKeys.begin;
 
-const Key serverCacheTypeKeyFor(KeyValueStoreType const& cacheType) {
+const Key serverCacheTypeKeyFor() {
+	return serverCacheTypePrefix;
+}
+
+const Value serverCacheTypeValue(StorageTypeCollections const& storageTypeCollections) {
 	BinaryWriter wr(Unversioned());
-	wr.serializeBytes(cacheType.toString().c_str(), cacheType.toString().size());
-	wr << serverID;
+	wr.serializeBytes(storageTypeCollections);
 	return wr.toValue();
 }
 
-const Value serverCacheTypeValue(KeyRef const& cachePrefix) {
-	BinaryWriter wr(Unversioned());
-	wr.serializeBytes(cachePrefix);
-	wr << serverID;
-	return wr.toValue();
-}
-
-UID decodeServerCacheTypeKey(KeyRef const& key) {
-	UID serverID;
-	BinaryReader rd(key.removePrefix(serverCacheTypeKeys.begin), Unversioned());
-	rd >> serverID;
-	return serverID;
-}
-KeyValueStoreType decodeServerCacheTypeValueFB(ValueRef const& value) {
-	KeyValueStoreType s;
+// UID decodeServerCacheTypeKey(KeyRef const& key) {
+// 	UID serverID;
+// 	BinaryReader rd(key.removePrefix(serverCacheTypeKeys.begin), Unversioned());
+// 	rd >> serverID;
+// 	return serverID;
+// }
+StorageTypeCollections decodeServerCacheTypeValueFB(ValueRef const& value) {
+	StorageTypeCollections s;
 	ObjectReader reader(value.begin(), IncludeVersion());
 	reader.deserialize(s);
 	return s;
 }
-KeyValueStoreType decodeServerCacheTypeValue(ValueRef const& value) {
-	KeyValueStoreType s;
+StorageTypeCollections decodeServerCacheTypeValue(ValueRef const& value) {
+	StorageTypeCollections s;
 	BinaryReader reader(value, IncludeVersion());
 
 	if (!reader.protocolVersion().hasStorageInterfaceReadiness()) {

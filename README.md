@@ -13,6 +13,8 @@ There are two future promises in DD: `relocationProducer` and `relocationConsume
 - [x] Create n DD Queues inside a vector, and n `relocationConsumer` promises for each queue.
 - [x] Create an new actor to receive requests from Producer and forward all the requests to corresponding consumer depending on the prefix.
 - [x] Create n `startMoveKeysParallelismLock` and n `finishMoveKeysParallelismLock` and n `MoveKeysLock`
+- [x] Create an new actor to receive requests from Producer and forward all the requests to corresponding consumer depending on the prefix.
+- [x] Create n `startMoveKeysParallelismLock` and n `finishMoveKeysParallelismLock` and n `MoveKeysLock`
 
 
 ### Modification for having n TeamCollections

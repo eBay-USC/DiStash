@@ -371,8 +371,9 @@ public:
 	// Optional components that can be set after ::init(). They're optional when test, but required for DD being
 	// fully-functional.
 
-	KeyRangeMap<int> storagePrefixPos;
-	std::unordered_map<Value, Key> storageTypePrefixes;
+	//Store the prefix for each storage type, the first element is the default storing type.
+	// std::vector<std::pair<KeyValueStoreType, Key>> storageTypes;
+	StorageTypeCollections storageTypeCollections;
 
 
 	std::vector<DDTeamCollection*> teamCollection;
@@ -507,31 +508,16 @@ public:
 		}
 	}
 
-	ACTOR static Future<Void> updateStorageTypePrefix(Reference<DataDistributor> self) {
-		state Future<Void> checkSignal = delay(SERVER_KNOBS->SERVER_LIST_DELAY, TaskPriority::DataDistributionLaunch);
-		state Future<RangeResult> storageTypePrefix = Never();
 
+	ACTOR static Future<Void> updateStorageTypePrefix(Reference<DataDistributor> self) {
+		// state Future<Void> checkSignal = delay(SERVER_KNOBS->SERVER_LIST_DELAY, TaskPriority::DataDistributionLaunch);
+		// state Future<RangeResult> storageTypePrefix = Never();
 		loop {
-			choose {
-				when(wait(checkSignal)) {
-					checkSignal = Never();
-					state Transaction tr(self->context);
-					storageTypePrefix = tr.getRange(serverCacheTypeKeys);
-					// storagePrefixPos
-				}
-				when(RangeResult prefixes = wait(storageTypePrefix)) {
-					for(KeyValueRef i =prefixes.begin(); i!= prefixes.end();i++) {
-						if(self->storageTypePrefixes.find(i.key) == self->storageTypePrefixes.end() ) continue;
-						// self->storagePrefixes.insert(i.key, i.value);
-						KeyRange prefixRange(i.key, i.key.withSuffix("\xff"));
-						if(self->storagePrefixPos.intersectingRanges(prefixRange)!=self->storagePrefixPos.lastItem()) continue;
-						self->storageTypePrefixes[i.key] = i.value;
-						self->storagePrefixPos.insert(prefixRange, self->storageTypePrefixes.size()-1);
-						init_DDQueue();
-						init_TeamCollection();
-					}
-				}
-			}
+			Transaction tr(self->context);
+			storageTypeCollections = decodeServerCacheTypeValue(wait(tr.get(serverCacheTypeKeyFor())));
+			if(storageTypeCollections.size()>=3) break;
+			wait(delay(SERVER_KNOBS->SERVER_LIST_DELAY, TaskPriority::DataDistributionLaunch));
+
 		}
 		return Void();
 
@@ -926,6 +912,131 @@ ACTOR Future<Void> monitorPhysicalShardStatus(Reference<PhysicalShardCollection>
 	}
 }
 
+ACTOR Future<Void> relocateShardForward(Reference<DataDistributor> self, TaskPriority taskID = TaskPriority::DefaultYield) {
+	loop {
+		RelocateShard shard = waitNext(self->relocationProducer);
+		for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
+			Key key = self->storageTypeCollections.prefixes[i];
+			if(shard.keys.intersects(KeyRangeRef(key, key.withSuffix("\xff"_sr)))) {
+				self->relocationConsumer[i].send(shard);
+				break;
+			}
+		}
+		wait(yield(taskID));
+	}
+}
+
+void init_storage_type(Reference<DataDistributor> self, std::vector<Future<Void>> &actors, const PromiseStream<Promise<int64_t>> &getAverageShardBytes, const PromiseStream<GetMetricsRequest> &getShardMetrics, const PromiseStream<GetTopKMetricsRequest> &getTopKShardMetrics, const Promise<UID> &removeFailedServer, const PromiseStream<RebalanceStorageQueueRequest> &triggerStorageQueueRebalance) {
+	for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
+		std::vector<TeamCollectionInterface> tcis; // primary and remote region interface
+		tcis.push_back(TeamCollectionInterface());
+		int replicaSize = self->configuration.storageTeamSize;
+		if (self->configuration.usableRegions > 1) {
+				tcis.push_back(TeamCollectionInterface());
+				replicaSize = 2 * self->configuration.storageTeamSize;
+
+		}
+		state Reference<AsyncVar<bool>> processingUnhealthy(new AsyncVar<bool>(false));
+		state Reference<AsyncVar<bool>> processingWiggle(new AsyncVar<bool>(false));
+		state PromiseStream<Promise<int>> getUnhealthyRelocationCount;
+		state Reference<DDTeamCollection> primaryTeamCollection;
+		state Reference<DDTeamCollection> remoteTeamCollection;
+
+		auto ddQueue = makeReference<DDQueue>(
+					DDQueueInitParams{ .id = self->ddId,
+									.lock = self->lock,
+									.db = self->txnProcessor,
+									.teamCollections = tcis,
+									.shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
+									.physicalShardCollection = self->physicalShardCollection,
+									.getAverageShardBytes = getAverageShardBytes,
+									.teamSize = replicaSize,
+									.singleRegionTeamSize = self->configuration.storageTeamSize,
+									.relocationProducer = self->relocationProducer,
+									.relocationConsumer = self->relocationConsumer[i].getFuture(),
+									.getShardMetrics = getShardMetrics,
+									.getTopKMetrics = getTopKShardMetrics});
+		actors.push_back(reportErrorsExcept(DDQueue::run(ddQueue,
+																processingUnhealthy,
+																processingWiggle,
+																getUnhealthyRelocationCount.getFuture(),
+																self->context->ddEnabledState.get()),
+													"DDQueue",
+													self->ddId,
+													&normalDDQueueErrors()));
+		std::vector<DDTeamCollection*> teamCollectionsPtrs;
+		primaryTeamCollection = makeReference<DDTeamCollection>(DDTeamCollectionInitParams{
+			self->txnProcessor,
+			self->ddId,
+			self->lock,
+			self->relocationProducer,
+			self->shardsAffectedByTeamFailure,
+			self->configuration,
+			self->primaryDcId,
+			self->configuration.usableRegions > 1 ? self->remoteDcIds : std::vector<Optional<Key>>(),
+			self->initialized.getFuture(),
+			zeroHealthyTeams[0],
+			IsPrimary::True,
+			processingUnhealthy,
+			processingWiggle,
+			getShardMetrics,
+			removeFailedServer,
+			getUnhealthyRelocationCount,
+			getAverageShardBytes,
+			triggerStorageQueueRebalance });
+		teamCollectionsPtrs.push_back(primaryTeamCollection.getPtr());
+		auto recruitStorage = IAsyncListener<RequestStream<RecruitStorageRequest>>::create(
+			self->dbInfo, [](auto const& info) { return info.clusterInterface.recruitStorage; });
+		if (self->configuration.usableRegions > 1) {
+			remoteTeamCollection = makeReference<DDTeamCollection>(
+				DDTeamCollectionInitParams{ self->txnProcessor,
+											self->ddId,
+											self->lock,
+											self->relocationProducer,
+											self->shardsAffectedByTeamFailure,
+											self->configuration,
+											self->remoteDcIds,
+											Optional<std::vector<Optional<Key>>>(),
+											self->initialized.getFuture() && remoteRecovered(self->dbInfo),
+											zeroHealthyTeams[1],
+											IsPrimary::False,
+											processingUnhealthy,
+											processingWiggle,
+											getShardMetrics,
+											removeFailedServer,
+											getUnhealthyRelocationCount,
+											getAverageShardBytes,
+											triggerStorageQueueRebalance });
+			teamCollectionsPtrs.push_back(remoteTeamCollection.getPtr());
+			remoteTeamCollection->teamCollections = teamCollectionsPtrs;
+			actors.push_back(reportErrorsExcept(DDTeamCollection::run(remoteTeamCollection,
+																		self->initData,
+																		tcis[1],
+																		recruitStorage,
+																		*self->context->ddEnabledState.get()),
+												"DDTeamCollectionSecondary",
+												self->ddId,
+												&normalDDQueueErrors()));
+			actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(remoteTeamCollection));
+		}
+		primaryTeamCollection->teamCollections = teamCollectionsPtrs;
+		self->teamCollection.push_back(primaryTeamCollection.getPtr());
+		actors.push_back(reportErrorsExcept(DDTeamCollection::run(primaryTeamCollection,
+																	self->initData,
+																	tcis[0],
+																	recruitStorage,
+																	*self->context->ddEnabledState.get()),
+											"DDTeamCollectionPrimary",
+											self->ddId,
+											&normalDDQueueErrors()));
+
+		actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(primaryTeamCollection));
+		actors.push_back(relocateShardForward(self->relocationProducer.getFuture(), self->relocationConsumer));
+		if (SERVER_KNOBS->SHARD_ENCODE_LOCATION_METADATA && SERVER_KNOBS->ENABLE_DD_PHYSICAL_SHARD) {
+			actors.push_back(monitorPhysicalShardStatus(self->physicalShardCollection));
+		}
+	}
+}
 // Runs the data distribution algorithm for FDB, including the DD Queue, DD tracker, and DD team collection
 ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
                                     PromiseStream<GetMetricsListRequest> getShardMetricsList) {
@@ -940,8 +1051,8 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 
 	// wait(debugCheckCoalescing(cx));
 	// FIXME: wrap the bootstrap process into class DataDistributor
-	state Reference<DDTeamCollection> primaryTeamCollection;
-	state Reference<DDTeamCollection> remoteTeamCollection;
+	// state Reference<DDTeamCollection> primaryTeamCollection;
+	// state Reference<DDTeamCollection> remoteTeamCollection;
 	state bool trackerCancelled;
 
 	// Start watching for changes before reading the config in init() below
@@ -970,6 +1081,7 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 		state Promise<UID> removeFailedServer;
 		try {
 			wait(DataDistributor::init(self));
+			wait(DataDistributor::updateStorageTypePrefix(self));
 
 			// When/If this assertion fails, Evan owes Ben a pat on the back for his foresight
 			ASSERT(self->configuration.storageTeamSize > 0);
@@ -991,26 +1103,33 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			self->physicalShardCollection = makeReference<PhysicalShardCollection>(self->txnProcessor);
 			wait(self->resumeRelocations());
 
-			std::vector<TeamCollectionInterface> tcis; // primary and remote region interface
+			
 			Reference<AsyncVar<bool>> anyZeroHealthyTeams; // true if primary or remote has zero healthy team
 			std::vector<Reference<AsyncVar<bool>>> zeroHealthyTeams; // primary and remote
 
-			tcis.push_back(TeamCollectionInterface());
-			zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-			int replicaSize = self->configuration.storageTeamSize;
+			
+			// zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+			for(int i = 0; i < storageTypePrefixes.size(); i++) {
+				zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+			}
+			// int replicaSize = self->configuration.storageTeamSize;
 
 			std::vector<Future<Void>> actors; // the container of ACTORs
 			actors.push_back(onConfigChange);
 
 			if (self->configuration.usableRegions > 1) {
-				tcis.push_back(TeamCollectionInterface());
-				replicaSize = 2 * self->configuration.storageTeamSize;
+				// tcis.push_back(TeamCollectionInterface());
+				// replicaSize = 2 * self->configuration.storageTeamSize;
 
-				zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-				anyZeroHealthyTeams = makeReference<AsyncVar<bool>>(true);
+				// zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+				// anyZeroHealthyTeams = makeReference<AsyncVar<bool>>(true);
+				for(int i = 0; i < storageTypePrefixes.size(); i++) {
+					zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+				}
 				actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
 			} else {
-				anyZeroHealthyTeams = zeroHealthyTeams[0];
+				// anyZeroHealthyTeams = zeroHealthyTeams[0];
+				actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
 			}
 
 			actors.push_back(self->pollMoveKeysLock());
@@ -1036,30 +1155,42 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			                                    "DDTracker",
 			                                    self->ddId,
 			                                    &normalDDQueueErrors()));
-
-			auto ddQueue = makeReference<DDQueue>(
-			    DDQueueInitParams{ .id = self->ddId,
-			                       .lock = self->lock,
-			                       .db = self->txnProcessor,
-			                       .teamCollections = tcis,
-			                       .shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
-			                       .physicalShardCollection = self->physicalShardCollection,
-			                       .getAverageShardBytes = getAverageShardBytes,
-			                       .teamSize = replicaSize,
-			                       .singleRegionTeamSize = self->configuration.storageTeamSize,
-			                       .relocationProducer = self->relocationProducer,
-			                       .relocationConsumer = self->relocationConsumer.getFuture(),
-			                       .getShardMetrics = getShardMetrics,
-			                       .getTopKMetrics = getTopKShardMetrics });
-			actors.push_back(reportErrorsExcept(DDQueue::run(ddQueue,
-			                                                 processingUnhealthy,
-			                                                 processingWiggle,
-			                                                 getUnhealthyRelocationCount.getFuture(),
-			                                                 self->context->ddEnabledState.get()),
-			                                    "DDQueue",
-			                                    self->ddId,
-			                                    &normalDDQueueErrors()));
-
+			// DDQueueInitParams ddInit{ .id = self->ddId,
+			//                        .lock = self->lock,
+			//                        .db = self->txnProcessor,
+			//                        .teamCollections = tcis,
+			//                        .shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
+			//                        .physicalShardCollection = self->physicalShardCollection,
+			//                        .getAverageShardBytes = getAverageShardBytes,
+			//                        .teamSize = replicaSize,
+			//                        .singleRegionTeamSize = self->configuration.storageTeamSize,
+			//                        .relocationProducer = self->relocationProducer,
+			//                        .relocationConsumer = self->relocationConsumer.getFuture(),
+			//                        .getShardMetrics = getShardMetrics,
+			//                        .getTopKMetrics = getTopKShardMetrics };
+			// auto ddQueue = makeReference<DDQueue>(
+			//     DDQueueInitParams{ .id = self->ddId,
+			//                        .lock = self->lock,
+			//                        .db = self->txnProcessor,
+			//                        .teamCollections = tcis,
+			//                        .shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
+			//                        .physicalShardCollection = self->physicalShardCollection,
+			//                        .getAverageShardBytes = getAverageShardBytes,
+			//                        .teamSize = replicaSize,
+			//                        .singleRegionTeamSize = self->configuration.storageTeamSize,
+			//                        .relocationProducer = self->relocationProducer,
+			//                        .relocationConsumer = self->relocationConsumer.getFuture(),
+			//                        .getShardMetrics = getShardMetrics,
+			//                        .getTopKMetrics = getTopKShardMetrics });
+			// actors.push_back(reportErrorsExcept(DDQueue::run(ddQueue,
+			//                                                  processingUnhealthy,
+			//                                                  processingWiggle,
+			//                                                  getUnhealthyRelocationCount.getFuture(),
+			//                                                  self->context->ddEnabledState.get()),
+			//                                     "DDQueue",
+			//                                     self->ddId,
+			//                                     &normalDDQueueErrors()));
+			init_storage_type(self, actors, getAverageShardBytes, getShardMetrics, getTopKShardMetrics, removeFailedServer, triggerStorageQueueRebalance);
 			if (self->ddTenantCache.present()) {
 				actors.push_back(reportErrorsExcept(self->ddTenantCache.get()->monitorTenantMap(),
 				                                    "DDTenantCacheMonitor",
@@ -1077,77 +1208,77 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 				                                    &normalDDQueueErrors()));
 			}
 
-			std::vector<DDTeamCollection*> teamCollectionsPtrs;
-			primaryTeamCollection = makeReference<DDTeamCollection>(DDTeamCollectionInitParams{
-			    self->txnProcessor,
-			    self->ddId,
-			    self->lock,
-			    self->relocationProducer,
-			    self->shardsAffectedByTeamFailure,
-			    self->configuration,
-			    self->primaryDcId,
-			    self->configuration.usableRegions > 1 ? self->remoteDcIds : std::vector<Optional<Key>>(),
-			    self->initialized.getFuture(),
-			    zeroHealthyTeams[0],
-			    IsPrimary::True,
-			    processingUnhealthy,
-			    processingWiggle,
-			    getShardMetrics,
-			    removeFailedServer,
-			    getUnhealthyRelocationCount,
-			    getAverageShardBytes,
-			    triggerStorageQueueRebalance });
-			teamCollectionsPtrs.push_back(primaryTeamCollection.getPtr());
-			auto recruitStorage = IAsyncListener<RequestStream<RecruitStorageRequest>>::create(
-			    self->dbInfo, [](auto const& info) { return info.clusterInterface.recruitStorage; });
-			if (self->configuration.usableRegions > 1) {
-				remoteTeamCollection = makeReference<DDTeamCollection>(
-				    DDTeamCollectionInitParams{ self->txnProcessor,
-				                                self->ddId,
-				                                self->lock,
-				                                self->relocationProducer,
-				                                self->shardsAffectedByTeamFailure,
-				                                self->configuration,
-				                                self->remoteDcIds,
-				                                Optional<std::vector<Optional<Key>>>(),
-				                                self->initialized.getFuture() && remoteRecovered(self->dbInfo),
-				                                zeroHealthyTeams[1],
-				                                IsPrimary::False,
-				                                processingUnhealthy,
-				                                processingWiggle,
-				                                getShardMetrics,
-				                                removeFailedServer,
-				                                getUnhealthyRelocationCount,
-				                                getAverageShardBytes,
-				                                triggerStorageQueueRebalance });
-				teamCollectionsPtrs.push_back(remoteTeamCollection.getPtr());
-				remoteTeamCollection->teamCollections = teamCollectionsPtrs;
-				actors.push_back(reportErrorsExcept(DDTeamCollection::run(remoteTeamCollection,
-				                                                          self->initData,
-				                                                          tcis[1],
-				                                                          recruitStorage,
-				                                                          *self->context->ddEnabledState.get()),
-				                                    "DDTeamCollectionSecondary",
-				                                    self->ddId,
-				                                    &normalDDQueueErrors()));
-				actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(remoteTeamCollection));
-			}
-			primaryTeamCollection->teamCollections = teamCollectionsPtrs;
-			self->teamCollection = primaryTeamCollection.getPtr();
-			actors.push_back(reportErrorsExcept(DDTeamCollection::run(primaryTeamCollection,
-			                                                          self->initData,
-			                                                          tcis[0],
-			                                                          recruitStorage,
-			                                                          *self->context->ddEnabledState.get()),
-			                                    "DDTeamCollectionPrimary",
-			                                    self->ddId,
-			                                    &normalDDQueueErrors()));
+			// std::vector<DDTeamCollection*> teamCollectionsPtrs;
+			// primaryTeamCollection = makeReference<DDTeamCollection>(DDTeamCollectionInitParams{
+			//     self->txnProcessor,
+			//     self->ddId,
+			//     self->lock,
+			//     self->relocationProducer,
+			//     self->shardsAffectedByTeamFailure,
+			//     self->configuration,
+			//     self->primaryDcId,
+			//     self->configuration.usableRegions > 1 ? self->remoteDcIds : std::vector<Optional<Key>>(),
+			//     self->initialized.getFuture(),
+			//     zeroHealthyTeams[0],
+			//     IsPrimary::True,
+			//     processingUnhealthy,
+			//     processingWiggle,
+			//     getShardMetrics,
+			//     removeFailedServer,
+			//     getUnhealthyRelocationCount,
+			//     getAverageShardBytes,
+			//     triggerStorageQueueRebalance });
+			// teamCollectionsPtrs.push_back(primaryTeamCollection.getPtr());
+			// auto recruitStorage = IAsyncListener<RequestStream<RecruitStorageRequest>>::create(
+			//     self->dbInfo, [](auto const& info) { return info.clusterInterface.recruitStorage; });
+			// if (self->configuration.usableRegions > 1) {
+			// 	remoteTeamCollection = makeReference<DDTeamCollection>(
+			// 	    DDTeamCollectionInitParams{ self->txnProcessor,
+			// 	                                self->ddId,
+			// 	                                self->lock,
+			// 	                                self->relocationProducer,
+			// 	                                self->shardsAffectedByTeamFailure,
+			// 	                                self->configuration,
+			// 	                                self->remoteDcIds,
+			// 	                                Optional<std::vector<Optional<Key>>>(),
+			// 	                                self->initialized.getFuture() && remoteRecovered(self->dbInfo),
+			// 	                                zeroHealthyTeams[1],
+			// 	                                IsPrimary::False,
+			// 	                                processingUnhealthy,
+			// 	                                processingWiggle,
+			// 	                                getShardMetrics,
+			// 	                                removeFailedServer,
+			// 	                                getUnhealthyRelocationCount,
+			// 	                                getAverageShardBytes,
+			// 	                                triggerStorageQueueRebalance });
+			// 	teamCollectionsPtrs.push_back(remoteTeamCollection.getPtr());
+			// 	remoteTeamCollection->teamCollections = teamCollectionsPtrs;
+			// 	actors.push_back(reportErrorsExcept(DDTeamCollection::run(remoteTeamCollection,
+			// 	                                                          self->initData,
+			// 	                                                          tcis[1],
+			// 	                                                          recruitStorage,
+			// 	                                                          *self->context->ddEnabledState.get()),
+			// 	                                    "DDTeamCollectionSecondary",
+			// 	                                    self->ddId,
+			// 	                                    &normalDDQueueErrors()));
+			// 	actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(remoteTeamCollection));
+			// }
+			// primaryTeamCollection->teamCollections = teamCollectionsPtrs;
+			// self->teamCollection = primaryTeamCollection.getPtr();
+			// actors.push_back(reportErrorsExcept(DDTeamCollection::run(primaryTeamCollection,
+			//                                                           self->initData,
+			//                                                           tcis[0],
+			//                                                           recruitStorage,
+			//                                                           *self->context->ddEnabledState.get()),
+			//                                     "DDTeamCollectionPrimary",
+			//                                     self->ddId,
+			//                                     &normalDDQueueErrors()));
 
-			actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(primaryTeamCollection));
-			actors.push_back(yieldPromiseStream(self->relocationProducer.getFuture(), self->relocationConsumer));
-			if (SERVER_KNOBS->SHARD_ENCODE_LOCATION_METADATA && SERVER_KNOBS->ENABLE_DD_PHYSICAL_SHARD) {
-				actors.push_back(monitorPhysicalShardStatus(self->physicalShardCollection));
-			}
+			// actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(primaryTeamCollection));
+			// actors.push_back(yieldPromiseStream(self->relocationProducer.getFuture(), self->relocationConsumer));
+			// if (SERVER_KNOBS->SHARD_ENCODE_LOCATION_METADATA && SERVER_KNOBS->ENABLE_DD_PHYSICAL_SHARD) {
+			// 	actors.push_back(monitorPhysicalShardStatus(self->physicalShardCollection));
+			// }
 
 			wait(waitForAll(actors));
 			return Void();
