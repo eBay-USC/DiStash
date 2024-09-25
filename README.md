@@ -24,8 +24,8 @@ There are two future promises in DD: `relocationProducer` and `relocationConsume
 - [x] Modify `shouldHandleServer` function, only handle the corresponding server
 
 ### Modification for ShardTracker
-- [ ] Initialize shard division based on the storage type prefix.
-- [ ] Do not merge the shard accross the storage type boundary
+- [x] Initialize shard division based on the storage type prefix.
+- [x] Do not merge the shard accross the storage type boundary
 
 ### Debuging
 - [ ] Unitest for Data Distributor.
