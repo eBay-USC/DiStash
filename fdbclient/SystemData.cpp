@@ -928,9 +928,9 @@ const Key serverCacheTypeKeyFor() {
 }
 
 const Value serverCacheTypeValue(StorageTypeCollections const& storageTypeCollections) {
-	BinaryWriter wr(Unversioned());
-	wr.serializeBytes(storageTypeCollections);
-	return wr.toValue();
+	auto protocolVersion = currentProtocolVersion();
+	protocolVersion.addObjectSerializerFlag();
+	return ObjectWriter::toValue(storageTypeCollections, IncludeVersion(protocolVersion));
 }
 
 // UID decodeServerCacheTypeKey(KeyRef const& key) {

@@ -2,9 +2,10 @@
 
 ## TODO
 ### Modification for Configuration Files
-- [x] Add a section inside configuration file, containing this server’s storage type and the prefix for this storage type.
-- [x] Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`). The key is `\xff/storageType/type`, the value is the prefix.
-- [ ] During initialization, check whether there are conflicts between configuration files and system metadata keyspace.
+- [x] Add a parameter inside configuration file, pointing to sotragetype.json, containing all server’s storage type and the prefix for all storage type.
+- [x] ~~Create a system metadata key to store n storage types and the prefixes. (`\xff\storageTypePrefix`). The key is `\xff/storageType/type`, the value is the prefix.~~
+- [x] When creating the data distributor, pass all the storagetype to data distributer.
+- [ ] During initialization, check whether there are conflicts in configuration files.
 
 
 ### Modification for having n DataDistributor Queue

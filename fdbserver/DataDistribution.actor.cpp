@@ -396,15 +396,15 @@ public:
 
 	Optional<Reference<TenantCache>> ddTenantCache;
 
-	DataDistributor(Reference<AsyncVar<ServerDBInfo> const> const& db, UID id, Reference<DDSharedContext> context)
+	DataDistributor(Reference<AsyncVar<ServerDBInfo> const> const& db, UID id, Reference<DDSharedContext> context, StorageTypeCollections storageTypeCollections)
 	  : dbInfo(db), context(context), ddId(id), txnProcessor(nullptr),
 	    initialDDEventHolder(makeReference<EventCacheHolder>("InitialDD")),
 	    movingDataEventHolder(makeReference<EventCacheHolder>("MovingData")),
 	    totalDataInFlightEventHolder(makeReference<EventCacheHolder>("TotalDataInFlight")),
 	    totalDataInFlightRemoteEventHolder(makeReference<EventCacheHolder>("TotalDataInFlightRemote")),
-	    teamCollection(nullptr), auditStorageHaLaunchingLock(1), auditStorageReplicaLaunchingLock(1),
+	    teamCollection(), auditStorageHaLaunchingLock(1), auditStorageReplicaLaunchingLock(1),
 	    auditStorageLocationMetadataLaunchingLock(1), auditStorageSsShardLaunchingLock(1),
-	    auditStorageInitStarted(false) {}
+	    auditStorageInitStarted(false), storageTypeCollections(storageTypeCollections) {}
 
 	// bootstrap steps
 
@@ -513,9 +513,12 @@ public:
 		// state Future<Void> checkSignal = delay(SERVER_KNOBS->SERVER_LIST_DELAY, TaskPriority::DataDistributionLaunch);
 		// state Future<RangeResult> storageTypePrefix = Never();
 		loop {
-			Transaction tr(self->context);
-			storageTypeCollections = decodeServerCacheTypeValue(wait(tr.get(serverCacheTypeKeyFor())));
-			if(storageTypeCollections.size()>=3) break;
+			Transaction tr(self->txnProcessor->context());
+			Optional<Value> x = wait(tr.get(serverCacheTypeKeyFor()));
+			if(x.present()) {
+				self->storageTypeCollections = decodeServerCacheTypeValue(x.get());
+				if(self->storageTypeCollections.prefixes.size()>=3) break;
+			}
 			wait(delay(SERVER_KNOBS->SERVER_LIST_DELAY, TaskPriority::DataDistributionLaunch));
 
 		}
@@ -914,7 +917,7 @@ ACTOR Future<Void> monitorPhysicalShardStatus(Reference<PhysicalShardCollection>
 
 ACTOR Future<Void> relocateShardForward(Reference<DataDistributor> self, TaskPriority taskID = TaskPriority::DefaultYield) {
 	loop {
-		RelocateShard shard = waitNext(self->relocationProducer);
+		RelocateShard shard = waitNext(self->relocationProducer.getFuture());
 		for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
 			Key key = self->storageTypeCollections.prefixes[i];
 			if(shard.keys.intersects(KeyRangeRef(key, key.withSuffix("\xff"_sr)))) {
@@ -926,7 +929,52 @@ ACTOR Future<Void> relocateShardForward(Reference<DataDistributor> self, TaskPri
 	}
 }
 
-void init_storage_type(Reference<DataDistributor> self, std::vector<Future<Void>> &actors, const PromiseStream<Promise<int64_t>> &getAverageShardBytes, const PromiseStream<GetMetricsRequest> &getShardMetrics, const PromiseStream<GetTopKMetricsRequest> &getTopKShardMetrics, const Promise<UID> &removeFailedServer, const PromiseStream<RebalanceStorageQueueRequest> &triggerStorageQueueRebalance) {
+void init_storage_type(Reference<DataDistributor> self, std::vector<Future<Void>> &actors, 
+	PromiseStream<Promise<int64_t>> &getAverageShardBytes, PromiseStream<GetMetricsRequest> &getShardMetrics, 
+	PromiseStream<GetTopKMetricsRequest> &getTopKShardMetrics, 
+	Promise<UID> &removeFailedServer, PromiseStream<RebalanceStorageQueueRequest> &triggerStorageQueueRebalance,
+	KeyRangeMap<ShardTrackedData> &shards, bool &trackerCancelled, PromiseStream<GetMetricsListRequest> &getShardMetricsList) {
+
+	Reference<AsyncVar<bool>> anyZeroHealthyTeams; // true if primary or remote has zero healthy team
+	std::vector<Reference<AsyncVar<bool>>> zeroHealthyTeams; // primary and remote
+
+	for(int i = 0; i < self->storageTypeCollections.prefixes.size(); i++) {
+		zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+	}
+	if (self->configuration.usableRegions > 1) {
+		for(int i = 0; i < self->storageTypeCollections.prefixes.size(); i++) {
+			zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+		}
+		actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
+	} else {
+		// anyZeroHealthyTeams = zeroHealthyTeams[0];
+		actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
+	}
+
+	auto shardTracker = makeReference<DataDistributionTracker>(
+	DataDistributionTrackerInitParams{ .db = self->txnProcessor,
+										.distributorId = self->ddId,
+										.readyToStart = self->initialized,
+										.output = self->relocationProducer,
+										.shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
+										.physicalShardCollection = self->physicalShardCollection,
+										.anyZeroHealthyTeams = anyZeroHealthyTeams,
+										.shards = &shards,
+										.trackerCancelled = &trackerCancelled,
+										.ddTenantCache = self->ddTenantCache });
+	actors.push_back(reportErrorsExcept(DataDistributionTracker::run(shardTracker,
+																		self->initData,
+																		getShardMetrics.getFuture(),
+																		getTopKShardMetrics.getFuture(),
+																		getShardMetricsList.getFuture(),
+																		getAverageShardBytes.getFuture(),
+																		triggerStorageQueueRebalance.getFuture(),
+																		self->storageTypeCollections),
+										"DDTracker",
+										self->ddId,
+										&normalDDQueueErrors()));
+
+	// 
 	for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
 		std::vector<TeamCollectionInterface> tcis; // primary and remote region interface
 		tcis.push_back(TeamCollectionInterface());
@@ -936,11 +984,11 @@ void init_storage_type(Reference<DataDistributor> self, std::vector<Future<Void>
 				replicaSize = 2 * self->configuration.storageTeamSize;
 
 		}
-		state Reference<AsyncVar<bool>> processingUnhealthy(new AsyncVar<bool>(false));
-		state Reference<AsyncVar<bool>> processingWiggle(new AsyncVar<bool>(false));
-		state PromiseStream<Promise<int>> getUnhealthyRelocationCount;
-		state Reference<DDTeamCollection> primaryTeamCollection;
-		state Reference<DDTeamCollection> remoteTeamCollection;
+		Reference<AsyncVar<bool>> processingUnhealthy(new AsyncVar<bool>(false));
+		Reference<AsyncVar<bool>> processingWiggle(new AsyncVar<bool>(false));
+		PromiseStream<Promise<int>> getUnhealthyRelocationCount;
+		Reference<DDTeamCollection> primaryTeamCollection;
+		Reference<DDTeamCollection> remoteTeamCollection;
 
 		auto ddQueue = makeReference<DDQueue>(
 					DDQueueInitParams{ .id = self->ddId,
@@ -1031,7 +1079,7 @@ void init_storage_type(Reference<DataDistributor> self, std::vector<Future<Void>
 											&normalDDQueueErrors()));
 
 		actors.push_back(DDTeamCollection::printSnapshotTeamsInfo(primaryTeamCollection));
-		actors.push_back(relocateShardForward(self->relocationProducer.getFuture(), self->relocationConsumer));
+		actors.push_back(relocateShardForward(self));
 		if (SERVER_KNOBS->SHARD_ENCODE_LOCATION_METADATA && SERVER_KNOBS->ENABLE_DD_PHYSICAL_SHARD) {
 			actors.push_back(monitorPhysicalShardStatus(self->physicalShardCollection));
 		}
@@ -1104,57 +1152,57 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			wait(self->resumeRelocations());
 
 			
-			Reference<AsyncVar<bool>> anyZeroHealthyTeams; // true if primary or remote has zero healthy team
-			std::vector<Reference<AsyncVar<bool>>> zeroHealthyTeams; // primary and remote
+			// Reference<AsyncVar<bool>> anyZeroHealthyTeams; // true if primary or remote has zero healthy team
+			// std::vector<Reference<AsyncVar<bool>>> zeroHealthyTeams; // primary and remote
 
 			
 			// zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-			for(int i = 0; i < storageTypePrefixes.size(); i++) {
-				zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-			}
+			// for(int i = 0; i < storageTypePrefixes.size(); i++) {
+			// 	zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+			// }
 			// int replicaSize = self->configuration.storageTeamSize;
 
 			std::vector<Future<Void>> actors; // the container of ACTORs
 			actors.push_back(onConfigChange);
 
-			if (self->configuration.usableRegions > 1) {
-				// tcis.push_back(TeamCollectionInterface());
-				// replicaSize = 2 * self->configuration.storageTeamSize;
+			// if (self->configuration.usableRegions > 1) {
+			// 	// tcis.push_back(TeamCollectionInterface());
+			// 	// replicaSize = 2 * self->configuration.storageTeamSize;
 
-				// zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-				// anyZeroHealthyTeams = makeReference<AsyncVar<bool>>(true);
-				for(int i = 0; i < storageTypePrefixes.size(); i++) {
-					zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-				}
-				actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
-			} else {
-				// anyZeroHealthyTeams = zeroHealthyTeams[0];
-				actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
-			}
+			// 	// zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+			// 	// anyZeroHealthyTeams = makeReference<AsyncVar<bool>>(true);
+			// 	for(int i = 0; i < storageTypePrefixes.size(); i++) {
+			// 		zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
+			// 	}
+			// 	actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
+			// } else {
+			// 	// anyZeroHealthyTeams = zeroHealthyTeams[0];
+			// 	actors.push_back(anyTrue(zeroHealthyTeams, anyZeroHealthyTeams));
+			// }
 
 			actors.push_back(self->pollMoveKeysLock());
 
-			auto shardTracker = makeReference<DataDistributionTracker>(
-			    DataDistributionTrackerInitParams{ .db = self->txnProcessor,
-			                                       .distributorId = self->ddId,
-			                                       .readyToStart = self->initialized,
-			                                       .output = self->relocationProducer,
-			                                       .shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
-			                                       .physicalShardCollection = self->physicalShardCollection,
-			                                       .anyZeroHealthyTeams = anyZeroHealthyTeams,
-			                                       .shards = &shards,
-			                                       .trackerCancelled = &trackerCancelled,
-			                                       .ddTenantCache = self->ddTenantCache });
-			actors.push_back(reportErrorsExcept(DataDistributionTracker::run(shardTracker,
-			                                                                 self->initData,
-			                                                                 getShardMetrics.getFuture(),
-			                                                                 getTopKShardMetrics.getFuture(),
-			                                                                 getShardMetricsList.getFuture(),
-			                                                                 getAverageShardBytes.getFuture(),
-			                                                                 triggerStorageQueueRebalance.getFuture()),
-			                                    "DDTracker",
-			                                    self->ddId,
-			                                    &normalDDQueueErrors()));
+			// auto shardTracker = makeReference<DataDistributionTracker>(
+			//     DataDistributionTrackerInitParams{ .db = self->txnProcessor,
+			//                                        .distributorId = self->ddId,
+			//                                        .readyToStart = self->initialized,
+			//                                        .output = self->relocationProducer,
+			//                                        .shardsAffectedByTeamFailure = self->shardsAffectedByTeamFailure,
+			//                                        .physicalShardCollection = self->physicalShardCollection,
+			//                                        .anyZeroHealthyTeams = anyZeroHealthyTeams,
+			//                                        .shards = &shards,
+			//                                        .trackerCancelled = &trackerCancelled,
+			//                                        .ddTenantCache = self->ddTenantCache });
+			// actors.push_back(reportErrorsExcept(DataDistributionTracker::run(shardTracker,
+			//                                                                  self->initData,
+			//                                                                  getShardMetrics.getFuture(),
+			//                                                                  getTopKShardMetrics.getFuture(),
+			//                                                                  getShardMetricsList.getFuture(),
+			//                                                                  getAverageShardBytes.getFuture(),
+			//                                                                  triggerStorageQueueRebalance.getFuture()),
+			//                                     "DDTracker",
+			//                                     self->ddId,
+			//                                     &normalDDQueueErrors()));
 			// DDQueueInitParams ddInit{ .id = self->ddId,
 			//                        .lock = self->lock,
 			//                        .db = self->txnProcessor,
@@ -1190,7 +1238,7 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			//                                     "DDQueue",
 			//                                     self->ddId,
 			//                                     &normalDDQueueErrors()));
-			init_storage_type(self, actors, getAverageShardBytes, getShardMetrics, getTopKShardMetrics, removeFailedServer, triggerStorageQueueRebalance);
+			init_storage_type(self, actors, getAverageShardBytes, getShardMetrics, getTopKShardMetrics, removeFailedServer, triggerStorageQueueRebalance, shards, trackerCancelled,getShardMetricsList);
 			if (self->ddTenantCache.present()) {
 				actors.push_back(reportErrorsExcept(self->ddTenantCache.get()->monitorTenantMap(),
 				                                    "DDTenantCacheMonitor",
@@ -1283,51 +1331,51 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			wait(waitForAll(actors));
 			return Void();
 		} catch (Error& e) {
-			trackerCancelled = true;
-			state Error err = e;
-			TraceEvent("DataDistributorDestroyTeamCollections").error(e);
-			state std::vector<UID> teamForDroppedRange;
-			if (removeFailedServer.getFuture().isReady() && !removeFailedServer.getFuture().isError()) {
-				// Choose a random healthy team to host the to-be-dropped range.
-				const UID serverID = removeFailedServer.getFuture().get();
-				std::vector<UID> pTeam = primaryTeamCollection->getRandomHealthyTeam(serverID);
-				teamForDroppedRange.insert(teamForDroppedRange.end(), pTeam.begin(), pTeam.end());
-				if (self->configuration.usableRegions > 1) {
-					std::vector<UID> rTeam = remoteTeamCollection->getRandomHealthyTeam(serverID);
-					teamForDroppedRange.insert(teamForDroppedRange.end(), rTeam.begin(), rTeam.end());
-				}
-			}
-			self->teamCollection = nullptr;
-			primaryTeamCollection = Reference<DDTeamCollection>();
-			remoteTeamCollection = Reference<DDTeamCollection>();
-			if (err.code() == error_code_actor_cancelled) {
-				// When cancelled, we cannot clear asyncronously because
-				// this will result in invalid memory access. This should only
-				// be an issue in simulation.
-				if (!g_network->isSimulated()) {
-					TraceEvent(SevWarn, "DataDistributorCancelled");
-				}
-				shards.clear();
-				throw e;
-			} else {
-				wait(shards.clearAsync());
-			}
-			TraceEvent("DataDistributorTeamCollectionsDestroyed").error(err);
-			if (removeFailedServer.getFuture().isReady() && !removeFailedServer.getFuture().isError()) {
-				TraceEvent("RemoveFailedServer", removeFailedServer.getFuture().get()).error(err);
-				wait(self->removeKeysFromFailedServer(removeFailedServer.getFuture().get(), teamForDroppedRange));
-				wait(self->removeStorageServer(removeFailedServer.getFuture().get()));
-			} else {
-				if (err.code() != error_code_movekeys_conflict && err.code() != error_code_dd_config_changed) {
-					throw err;
-				}
+			// trackerCancelled = true;
+			// state Error err = e;
+			// TraceEvent("DataDistributorDestroyTeamCollections").error(e);
+			// state std::vector<UID> teamForDroppedRange;
+			// if (removeFailedServer.getFuture().isReady() && !removeFailedServer.getFuture().isError()) {
+			// 	// Choose a random healthy team to host the to-be-dropped range.
+			// 	const UID serverID = removeFailedServer.getFuture().get();
+			// 	std::vector<UID> pTeam = primaryTeamCollection->getRandomHealthyTeam(serverID);
+			// 	teamForDroppedRange.insert(teamForDroppedRange.end(), pTeam.begin(), pTeam.end());
+			// 	if (self->configuration.usableRegions > 1) {
+			// 		std::vector<UID> rTeam = remoteTeamCollection->getRandomHealthyTeam(serverID);
+			// 		teamForDroppedRange.insert(teamForDroppedRange.end(), rTeam.begin(), rTeam.end());
+			// 	}
+			// }
+			// self->teamCollection = nullptr;
+			// primaryTeamCollection = Reference<DDTeamCollection>();
+			// remoteTeamCollection = Reference<DDTeamCollection>();
+			// if (err.code() == error_code_actor_cancelled) {
+			// 	// When cancelled, we cannot clear asyncronously because
+			// 	// this will result in invalid memory access. This should only
+			// 	// be an issue in simulation.
+			// 	if (!g_network->isSimulated()) {
+			// 		TraceEvent(SevWarn, "DataDistributorCancelled");
+			// 	}
+			// 	shards.clear();
+			// 	throw e;
+			// } else {
+			// 	wait(shards.clearAsync());
+			// }
+			// TraceEvent("DataDistributorTeamCollectionsDestroyed").error(err);
+			// if (removeFailedServer.getFuture().isReady() && !removeFailedServer.getFuture().isError()) {
+			// 	TraceEvent("RemoveFailedServer", removeFailedServer.getFuture().get()).error(err);
+			// 	wait(self->removeKeysFromFailedServer(removeFailedServer.getFuture().get(), teamForDroppedRange));
+			// 	wait(self->removeStorageServer(removeFailedServer.getFuture().get()));
+			// } else {
+			// 	if (err.code() != error_code_movekeys_conflict && err.code() != error_code_dd_config_changed) {
+			// 		throw err;
+			// 	}
 
-				bool ddEnabled = wait(self->isDataDistributionEnabled());
-				TraceEvent("DataDistributionMoveKeysConflict").error(err).detail("DataDistributionEnabled", ddEnabled);
-				if (ddEnabled) {
-					throw err;
-				}
-			}
+			// 	bool ddEnabled = wait(self->isDataDistributionEnabled());
+			// 	TraceEvent("DataDistributionMoveKeysConflict").error(err).detail("DataDistributionEnabled", ddEnabled);
+			// 	if (ddEnabled) {
+			// 		throw err;
+			// 	}
+			// }
 		}
 	}
 }
@@ -1741,35 +1789,35 @@ ACTOR Future<Void> ddSnapCreate(
 ACTOR Future<Void> ddExclusionSafetyCheck(DistributorExclusionSafetyCheckRequest req,
                                           Reference<DataDistributor> self,
                                           Database cx) {
-	TraceEvent("DDExclusionSafetyCheckBegin", self->ddId).log();
-	std::vector<StorageServerInterface> ssis = wait(getStorageServers(cx));
-	DistributorExclusionSafetyCheckReply reply(true);
-	if (!self->teamCollection) {
-		TraceEvent("DDExclusionSafetyCheckTeamCollectionInvalid", self->ddId).log();
-		reply.safe = false;
-		req.reply.send(reply);
-		return Void();
-	}
-	// If there is only 1 team, unsafe to mark failed: team building can get stuck due to lack of servers left
-	if (self->teamCollection->teams.size() <= 1) {
-		TraceEvent("DDExclusionSafetyCheckNotEnoughTeams", self->ddId).log();
-		reply.safe = false;
-		req.reply.send(reply);
-		return Void();
-	}
-	std::vector<UID> excludeServerIDs;
-	// Go through storage server interfaces and translate Address -> server ID (UID)
-	for (const AddressExclusion& excl : req.exclusions) {
-		for (const auto& ssi : ssis) {
-			if (excl.excludes(ssi.address()) ||
-			    (ssi.secondaryAddress().present() && excl.excludes(ssi.secondaryAddress().get()))) {
-				excludeServerIDs.push_back(ssi.id());
-			}
-		}
-	}
-	reply.safe = self->teamCollection->exclusionSafetyCheck(excludeServerIDs);
-	TraceEvent("DDExclusionSafetyCheckFinish", self->ddId).log();
-	req.reply.send(reply);
+	// TraceEvent("DDExclusionSafetyCheckBegin", self->ddId).log();
+	// std::vector<StorageServerInterface> ssis = wait(getStorageServers(cx));
+	// DistributorExclusionSafetyCheckReply reply(true);
+	// if (!self->teamCollection) {
+	// 	TraceEvent("DDExclusionSafetyCheckTeamCollectionInvalid", self->ddId).log();
+	// 	reply.safe = false;
+	// 	req.reply.send(reply);
+	// 	return Void();
+	// }
+	// // If there is only 1 team, unsafe to mark failed: team building can get stuck due to lack of servers left
+	// if (self->teamCollection->teams.size() <= 1) {
+	// 	TraceEvent("DDExclusionSafetyCheckNotEnoughTeams", self->ddId).log();
+	// 	reply.safe = false;
+	// 	req.reply.send(reply);
+	// 	return Void();
+	// }
+	// std::vector<UID> excludeServerIDs;
+	// // Go through storage server interfaces and translate Address -> server ID (UID)
+	// for (const AddressExclusion& excl : req.exclusions) {
+	// 	for (const auto& ssi : ssis) {
+	// 		if (excl.excludes(ssi.address()) ||
+	// 		    (ssi.secondaryAddress().present() && excl.excludes(ssi.secondaryAddress().get()))) {
+	// 			excludeServerIDs.push_back(ssi.id());
+	// 		}
+	// 	}
+	// }
+	// reply.safe = self->teamCollection->exclusionSafetyCheck(excludeServerIDs);
+	// TraceEvent("DDExclusionSafetyCheckFinish", self->ddId).log();
+	// req.reply.send(reply);
 	return Void();
 }
 
@@ -1833,13 +1881,13 @@ static int64_t getMedianShardSize(VectorRef<DDMetricsRef> metricVec) {
 
 GetStorageWigglerStateReply getStorageWigglerStates(Reference<DataDistributor> self) {
 	GetStorageWigglerStateReply reply;
-	if (self->teamCollection) {
-		std::tie(reply.primary, reply.lastStateChangePrimary) = self->teamCollection->getStorageWigglerState();
-		if (self->teamCollection->teamCollections.size() > 1) {
-			std::tie(reply.remote, reply.lastStateChangeRemote) =
-			    self->teamCollection->teamCollections[1]->getStorageWigglerState();
-		}
-	}
+	// if (self->teamCollection) {
+	// 	std::tie(reply.primary, reply.lastStateChangePrimary) = self->teamCollection->getStorageWigglerState();
+	// 	if (self->teamCollection->teamCollections.size() > 1) {
+	// 		std::tie(reply.remote, reply.lastStateChangeRemote) =
+	// 		    self->teamCollection->teamCollections[1]->getStorageWigglerState();
+	// 	}
+	// }
 	return reply;
 }
 
@@ -3455,9 +3503,9 @@ ACTOR Future<Void> doAuditLocationMetadata(Reference<DataDistributor> self,
 	return Void();
 }
 
-ACTOR Future<Void> dataDistributor(DataDistributorInterface di, Reference<AsyncVar<ServerDBInfo> const> db) {
+ACTOR Future<Void> dataDistributor(DataDistributorInterface di, Reference<AsyncVar<ServerDBInfo> const> db, StorageTypeCollections storageTypeCollections) {
 	state Reference<DDSharedContext> context(new DDSharedContext(di.id()));
-	state Reference<DataDistributor> self(new DataDistributor(db, di.id(), context));
+	state Reference<DataDistributor> self(new DataDistributor(db, di.id(), context, storageTypeCollections));
 	state Future<Void> collection = actorCollection(self->addActor.getFuture());
 	state PromiseStream<GetMetricsListRequest> getShardMetricsList;
 	state Database cx = openDBOnServer(db, TaskPriority::DefaultDelay, LockAware::True);

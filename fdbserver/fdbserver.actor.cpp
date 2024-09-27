@@ -120,7 +120,7 @@ enum {
 	OPT_TRACE_FORMAT, OPT_WHITELIST_BINPATH, OPT_BLOB_CREDENTIAL_FILE, OPT_CONFIG_PATH, OPT_USE_TEST_CONFIG_DB, OPT_NO_CONFIG_DB, OPT_FAULT_INJECTION, OPT_PROFILER, OPT_PRINT_SIMTIME,
 	OPT_FLOW_PROCESS_NAME, OPT_FLOW_PROCESS_ENDPOINT, OPT_IP_TRUSTED_MASK, OPT_KMS_CONN_DISCOVERY_URL_FILE, OPT_KMS_CONNECTOR_TYPE, OPT_KMS_REST_ALLOW_NOT_SECURE_CONECTION, OPT_KMS_CONN_VALIDATION_TOKEN_DETAILS,
 	OPT_KMS_CONN_GET_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_LATEST_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_BLOB_METADATA_ENDPOINT, OPT_NEW_CLUSTER_KEY, OPT_AUTHZ_PUBLIC_KEY_FILE, OPT_USE_FUTURE_PROTOCOL_VERSION, OPT_CONSISTENCY_CHECK_URGENT_MODE,
-	OPT_CACHE_POLICY, OPT_STORAGE_PREFIX, OPT_STORAGE_TYPE
+	OPT_CACHE_POLICY, OPT_STORAGE_PREFIX, OPT_STORAGE_TYPE, OPT_STORAGE_TYPE_FILE
 };
 
 CSimpleOpt::SOption g_rgOptions[] = {
@@ -138,6 +138,7 @@ CSimpleOpt::SOption g_rgOptions[] = {
 	{ OPT_STORAGE_PREFIX,        "--stoarge-prefix",            SO_REQ_SEP },
 	{ OPT_CACHE_TYPE,            "--cache-type",                SO_REQ_SEP },
 	{ OPT_CACHE_POLICY,          "--cache-policy",              SO_REQ_SEP },
+	{ OPT_STORAGE_TYPE_FILE,     "--storage-type-file",         SO_REQ_SEP },
 #ifdef __linux__
 	{ OPT_FILESYSTEM,           "--data-filesystem",            SO_REQ_SEP },
 	{ OPT_PROFILER_RSS_SIZE,    "--rsssize",                    SO_REQ_SEP },
@@ -1039,7 +1040,7 @@ enum class ServerRole {
 struct CLIOptions {
 	std::string commandLine;
 	std::string fileSystemPath, dataFolder, connFile, seedConnFile, seedConnString,
-	    logFolder = ".", metricsConnFile, metricsPrefix, newClusterKey, authzPublicKeyFile;
+	    logFolder = ".", metricsConnFile, metricsPrefix, newClusterKey, authzPublicKeyFile, storageTypeFile;
 	std::string logGroup = "default";
 	uint64_t rollsize = TRACE_DEFAULT_ROLL_SIZE;
 	uint64_t maxLogsSize = TRACE_DEFAULT_MAX_LOGS_SIZE;
@@ -1068,6 +1069,7 @@ struct CLIOptions {
 	Optional<Standalone<StringRef>> zoneId;
 	KeyValueStoreType cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
 	Key storagePrefix;
+	StorageTypeCollections storageTypeCollections;
 	CachePolicy cachePolicy = CachePolicy::NONE;
 	Optional<Standalone<StringRef>> dcId;
 	ProcessClass processClass = ProcessClass(ProcessClass::UnsetClass, ProcessClass::CommandLineSource);
@@ -1339,6 +1341,9 @@ private:
 				break;
 			case OPT_SEEDCONNFILE:
 				seedConnFile = args.OptionArg();
+				break;
+			case OPT_STORAGE_TYPE_FILE:
+				storageTypeFile = args.OptionArg();
 				break;
 			case OPT_SEEDCONNSTRING:
 				seedConnString = args.OptionArg();
@@ -1851,6 +1856,24 @@ private:
 		if (metricsConnFile != "" && metricsPrefix == "") {
 			fprintf(stderr, "If a metrics cluster file is specified, a metrics prefix is required.\n");
 			flushAndExit(FDB_EXIT_ERROR);
+		}
+
+		if(storageTypeFile.length() && fileExists(storageTypeFile)) {
+			std::string contents(readFileBytes(storageTypeFile, 100000));
+			json_spirit::mValue config;
+			if (!json_spirit::read_string(contents, config)) {
+				fprintf(stderr, "ERROR: Invalid JSON\n");
+			}
+			if (config.type() != json_spirit::obj_type) {
+				fprintf(stderr, "ERROR: Configuration file must contain a JSON object\n");
+			}
+			StatusObject configJSON = config.get_obj();
+			for(auto i:configJSON) {
+				KeyValueStoreType type(KeyValueStoreType::fromString(i.first));
+				KeyRef prefix = KeyRef(i.second.get_str());
+				storageTypeCollections.types.push_back(storageTypeCollections.arena, type);
+				storageTypeCollections.prefixes.push_back_deep(storageTypeCollections.arena, prefix);
+			}
 		}
 
 		bool autoPublicAddress =
@@ -2402,7 +2425,7 @@ int main(int argc, char* argv[]) {
 					dataFolder = format("fdb/%d/", opts.publicAddresses.address.port); // SOMEDAY: Better default
 
 				std::vector<Future<Void>> actors(listenErrors.begin(), listenErrors.end());
-				ExtraType extraType(opts.cacheType, opts.cacheType, opts.storagePrefix, opts.cachePolicy);
+				ExtraType extraType(opts.cacheType, opts.cacheType, opts.storagePrefix, opts.storageTypeCollections, opts.cachePolicy);
 				actors.push_back(fdbd(opts.connectionFile,
 				                      opts.localities,
 				                      opts.processClass,

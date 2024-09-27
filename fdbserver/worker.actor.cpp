@@ -2101,6 +2101,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
                                 Reference<AsyncVar<Optional<UID>>> clusterId,
                                 bool consistencyCheckUrgentMode,
 								ExtraType extraType) {
+	state ExtraType extraType_ = extraType;
 	state PromiseStream<ErrorInfo> errors;
 	state Reference<AsyncVar<Optional<DataDistributorInterface>>> ddInterf(
 	    new AsyncVar<Optional<DataDistributorInterface>>());
@@ -2685,7 +2686,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 					startRole(Role::DATA_DISTRIBUTOR, recruited.id(), interf.id());
 					DUMPTOKEN(recruited.waitFailure);
 
-					Future<Void> dataDistributorProcess = dataDistributor(recruited, dbInfo);
+					Future<Void> dataDistributorProcess = dataDistributor(recruited, dbInfo, extraType_.storageTypeColelctions);
 					errorForwarders.add(forwardError(
 					    errors,
 					    Role::DATA_DISTRIBUTOR,

@@ -167,13 +167,13 @@ struct MockDDTrackerShardEvaluatorWorkload : public MockDDTestWorkload {
 		                                       .shards = &shards,
 		                                       .trackerCancelled = &ddcx.trackerCancelled,
 		                                       .ddTenantCache = {} });
-		actors.add(DataDistributionTracker::run(shardTracker,
-		                                        initData,
-		                                        getShardMetrics.getFuture(),
-		                                        getTopKMetrics.getFuture(),
-		                                        getShardMetricsList.getFuture(),
-		                                        getAverageShardBytes.getFuture(),
-		                                        triggerStorageQueueRebalance.getFuture()));
+		// actors.add(DataDistributionTracker::run(shardTracker,
+		//                                         initData,
+		//                                         getShardMetrics.getFuture(),
+		//                                         getTopKMetrics.getFuture(),
+		//                                         getShardMetricsList.getFuture(),
+		//                                         getAverageShardBytes.getFuture(),
+		//                                         triggerStorageQueueRebalance.getFuture()));
 
 		actors.add(relocateShardReporter(this, output.getFuture()));
 

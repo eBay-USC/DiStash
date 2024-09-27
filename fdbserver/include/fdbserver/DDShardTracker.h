@@ -79,7 +79,7 @@ public:
 	// Read hot detection
 	PromiseStream<KeyRange> readHotShard;
 
-	const StorageTypeCollections &storageTypeCollections;
+	StorageTypeCollections storageTypeCollections;
 	std::vector<Key> customBoundaries;
 
 	// The reference to trackerCancelled must be extracted by actors,
@@ -126,7 +126,8 @@ public:
 	                        FutureStream<GetTopKMetricsRequest> const& getTopKMetrics,
 	                        FutureStream<GetMetricsListRequest> const& getShardMetricsList,
 	                        FutureStream<Promise<int64_t>> const& getAverageShardBytes,
-	                        FutureStream<RebalanceStorageQueueRequest> const& triggerStorageQueueRebalance);
+	                        FutureStream<RebalanceStorageQueueRequest> const& triggerStorageQueueRebalance,
+							StorageTypeCollections storageTypeCollections);
 
 	explicit DataDistributionTracker(DataDistributionTrackerInitParams const& params);
 };

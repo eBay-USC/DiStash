@@ -13939,7 +13939,7 @@ ACTOR Future<Void> replaceInterface(StorageServer* self, StorageServerInterface 
 
 
 					// tr.addReadConflictRange(singleKeyRange(serverCacheTypeKeyFor(ssi)));
-					tr.set(serverCacheTypeKeyFor(self->extraType.storageType), serverCacheTypeValue(self->extraType.storagePrefix));
+					// tr.set(serverCacheTypeKeyFor(self->extraType.storageType), serverCacheTypeValue(self->extraType.storagePrefix));
 
 					if (rep.newLocality) {
 						tr.addReadConflictRange(tagLocalityListKeys);

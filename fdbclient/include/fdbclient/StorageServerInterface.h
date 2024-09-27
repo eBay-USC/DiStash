@@ -271,16 +271,7 @@ public:
 	}
 };
 
-struct StorageTypeCollections {
-	constexpr static FileIdentifier file_identifier = 28314830;
-	Arena arena;
-	VectorRef<Key> prefixes;
-	VectorRef<KeyValueStoreType> types;
-	template <typename Ar>
-	void serialize(Ar& ar) {
-		serializer(ar, prefixes, types, arena);
-	}
-};
+
 
 struct StorageInfo : NonCopyable, public ReferenceCounted<StorageInfo> {
 	Tag tag;

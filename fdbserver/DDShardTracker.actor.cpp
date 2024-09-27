@@ -918,7 +918,7 @@ static bool shardForwardMergeFeasible(DataDistributionTracker* self, KeyRange co
 
 	for(int i=0;i<self->customBoundaries.size();i+=2) {
 		KeyRangeRef ranges(self->customBoundaries[i],self->customBoundaries[i+1]);
-		if(ranges.contains(key) != ranges.contains(nextRange)) return false;
+		if(ranges.contains(keys) != ranges.contains(nextRange)) return false;
 	}
 
 	return shardMergeFeasible(self, keys, nextRange);
@@ -933,8 +933,9 @@ static bool shardBackwardMergeFeasible(DataDistributionTracker* self, KeyRange c
 		return false;
 	}
 
-	if(cacheKeys.contains(keys) != cacheKeys.contains(prevRange)) {
-		return false;
+	for(int i=0;i<self->customBoundaries.size();i+=2) {
+		KeyRangeRef ranges(self->customBoundaries[i],self->customBoundaries[i+1]);
+		if(ranges.contains(keys) != ranges.contains(prevRange)) return false;
 	}
 
 	return shardMergeFeasible(self, keys, prevRange);
@@ -1530,7 +1531,7 @@ DataDistributionTracker::DataDistributionTracker(DataDistributionTrackerInitPara
     output(params.output), shardsAffectedByTeamFailure(params.shardsAffectedByTeamFailure),
     physicalShardCollection(params.physicalShardCollection), readyToStart(params.readyToStart),
     anyZeroHealthyTeams(params.anyZeroHealthyTeams), trackerCancelled(params.trackerCancelled),
-    ddTenantCache(params.ddTenantCache) {}
+    ddTenantCache(params.ddTenantCache){}
 
 DataDistributionTracker::~DataDistributionTracker() {
 	if (trackerCancelled) {
@@ -1604,7 +1605,7 @@ Future<Void> DataDistributionTracker::run(
     const FutureStream<GetMetricsListRequest>& getShardMetricsList,
     const FutureStream<Promise<int64_t>>& getAverageShardBytes,
     const FutureStream<RebalanceStorageQueueRequest>& triggerStorageQueueRebalance,
-	const StorageTypeCollections &storageTypeCollections) {
+	StorageTypeCollections storageTypeCollections) {
 	self->storageTypeCollections = storageTypeCollections;
 	self->getShardMetrics = getShardMetrics;
 	self->getTopKMetrics = getTopKMetrics;
