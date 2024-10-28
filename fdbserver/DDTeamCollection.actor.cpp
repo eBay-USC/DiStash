@@ -233,7 +233,6 @@ public:
 		if (startIndex >= self->teams.size()) {
 			startIndex = 0;
 		}
-		bool isCache = (req.keys.present() && req.keys.get().begin.startsWith("\x00"_sr));
 		Optional<Reference<IDataDistributionTeam>> bestOption;
 		int64_t bestLoadBytes = 0;
 		bool wigglingBestOption = false; // best option contains server in paused wiggle state
@@ -246,8 +245,6 @@ public:
 				    self->teams[currentIndex]->getEligibilityCount(eligibilityType) <= 0) {
 					continue;
 				}
-				if(isCache && self->teams[currentIndex]->getServers()[0]->getLastKnownInterface().cacheType != KeyValueStoreType::Cache) continue;
-				if(!isCache && self->teams[currentIndex]->getServers()[0]->getLastKnownInterface().cacheType != KeyValueStoreType::NONE) continue;
 
 				int64_t loadBytes = self->teams[currentIndex]->getLoadBytes(true, req.inflightPenalty);
 				if (req.storageQueueAware) {
@@ -468,13 +465,13 @@ public:
 					Reference<TCTeamInfo> dest = deterministicRandom()->randomChoice(self->teams);
 					int cacheTries = 0;
 					while(cacheTries <= 10) {
-						if(isCache && dest->getServers()[0]->getLastKnownInterface().cacheType == KeyValueStoreType::Cache) break;
-						if(!isCache && dest->getServers()[0]->getLastKnownInterface().cacheType == KeyValueStoreType::NONE) break;
+						// if(isCache && dest->getServers()[0]->getLastKnownInterface().cacheType == KeyValueStoreType::Cache) break;
+						// if(!isCache && dest->getServers()[0]->getLastKnownInterface().cacheType == KeyValueStoreType::NONE) break;
 						dest = deterministicRandom()->randomChoice(self->teams);
 						cacheTries++;
 					}
-					if(isCache && dest->getServers()[0]->getLastKnownInterface().cacheType != KeyValueStoreType::Cache) {nTries++;continue;}
-					if(!isCache && dest->getServers()[0]->getLastKnownInterface().cacheType != KeyValueStoreType::NONE) {nTries++;continue;}
+					// if(isCache && dest->getServers()[0]->getLastKnownInterface().cacheType != KeyValueStoreType::Cache) {nTries++;continue;}
+					// if(!isCache && dest->getServers()[0]->getLastKnownInterface().cacheType != KeyValueStoreType::NONE) {nTries++;continue;}
 
 					bool ok = dest->isHealthy();
 					if (ok) {
@@ -1512,6 +1509,7 @@ public:
 							std::vector<Reference<TCTeamInfo>> newBadTeams;
 							for (auto& serverTeam : server->getTeams()) {
 								if (!self->satisfiesPolicy(serverTeam->getServers())) {
+									TraceEvent("BadTeam0");
 									newBadTeams.push_back(serverTeam);
 									continue;
 								}
@@ -2571,8 +2569,13 @@ public:
 			self->recruitingLocalities.insert(candidateWorker.worker.stableAddress());
 
 			state InitializeStorageRequest isr;
+			TraceEvent("InitializeStorageRequest").detail("cur", self->storageType.toString())
+			.detail("pre", self->configuration.storageServerStoreType.toString())
+			.detail("ip", workerAddr.toString());
 			isr.storeType = recruitTss ? self->configuration.testingStorageServerStoreType
-			                           : self->configuration.storageServerStoreType;
+										  : self->storageType;
+			//                            : self->configuration.storageServerStoreType;
+
 
 			// Check if perpetual storage wiggle is enabled and perpetualStoreType is set. If so, we use
 			// perpetualStoreType for all new SSes that match perpetualStorageWiggleLocality.
@@ -2826,6 +2829,16 @@ public:
 						numSSIgnoredPerAddr[addrExcl]++;
 					}
 				}
+				for (auto s = self->server_and_tss_info.begin(); s != self->server_and_tss_info.end(); ++s) {
+					auto types = s->second->getLastKnownInterface().extraType.storageType;
+					auto addr = s->second->getLastKnownInterface().stableAddress();
+					AddressExclusion addrExcl(addr.ip, addr.port);
+					
+					if(types != self->storageType) {
+						exclusions.insert(addrExcl);
+						numSSIgnoredPerAddr[addrExcl]++;
+					}
+				}
 				for (auto addr : self->recruitingLocalities) {
 					exclusions.insert(AddressExclusion(addr.ip, addr.port));
 				}
@@ -2845,6 +2858,31 @@ public:
 					TraceEvent(SevDebug, "DDRecruitExclInvalidAddr").detail("Excluding", addr.toString());
 					exclusions.insert(addr);
 				}
+
+				for(auto& addr : self->differentTypeAddr) {
+					TraceEvent("StorageRecruitExist").detail("addr", addr.toString())
+					.detail("cur_type", self->storageType.toString());
+					exclusions.insert(addr);
+				}
+
+				// if(self->storageType == KeyValueStoreType::SSD_BTREE_V2) {
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:4000")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:4100")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:4600")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:5200")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:5300")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:5700")));
+				// } else {
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6000")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6100")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6200")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6300")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6400")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6500")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6600")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6700")));
+				// 	exclusions.insert(AddressExclusion::parse(std::string("127.0.0.1:6800")));
+				// }
 
 				for (auto& it : numSSIgnoredPerAddr) {
 					if (it.second > 2) {
@@ -2868,13 +2906,15 @@ public:
 				}
 
 				rsr.includeDCs = self->includedDCs;
+				rsr.exraType.storageType = self->storageType;
 
 				TraceEvent(rsr.criticalRecruitment ? SevWarn : SevInfo, "DDRecruiting")
 				    .detail("Primary", self->primary)
 				    .detail("State", "Sending request to CC")
 				    .detail("Exclusions", rsr.excludeAddresses.size())
 				    .detail("Critical", rsr.criticalRecruitment)
-				    .detail("IncludedDCsSize", rsr.includeDCs.size());
+				    .detail("IncludedDCsSize", rsr.includeDCs.size())
+					.detail("Typesss", self->storageType.toString());
 
 				if (rsr.criticalRecruitment) {
 					TraceEvent(SevWarn, "DDRecruitingEmergency", self->distributorId).detail("Primary", self->primary);
@@ -3282,11 +3322,13 @@ public:
 	                              Reference<InitialDataDistribution> initData,
 	                              TeamCollectionInterface tci,
 	                              Reference<IAsyncListener<RequestStream<RecruitStorageRequest>>> recruitStorage,
-	                              DDEnabledState const* ddEnabledState) {
+	                              DDEnabledState const* ddEnabledState,
+								  KeyValueStoreType storageType) {
 		state DDTeamCollection* self = teamCollection.getPtr();
 		state Future<Void> loggingTrigger = Void();
 		state PromiseStream<Void> serverRemoved;
 		state Future<Void> error = actorCollection(self->addActor.getFuture());
+		self->storageType = storageType;
 
 		try {
 			wait(self->init(initData, *ddEnabledState));
@@ -4695,13 +4737,15 @@ void DDTeamCollection::addTeam(const std::vector<Reference<TCServerInfo>>& newTe
 		                      (!ddLargeTeamEnabled() && teamInfo->size() != configuration.storageTeamSize) };
 
 	teamInfo->tracker = teamTracker(teamInfo, badTeam, redundantTeam);
-	for (auto& server : newTeamServers) {
-		if(server->getLastKnownInterface().cacheType!=newTeamServers[0]->getLastKnownInterface().cacheType) {
-			badTeam = IsBadTeam::True;
-		}
-	}
+	// for (auto& server : newTeamServers) {
+	// 	if(server->getLastKnownInterface().cacheType!=newTeamServers[0]->getLastKnownInterface().cacheType) {
+	// 		badTeam = IsBadTeam::True;
+	// 	}
+	// }
 	// ASSERT( teamInfo->serverIDs.size() > 0 ); //team can be empty at DB initialization
 	if (badTeam) {
+		TraceEvent("BadTeam1").detail("redundant", redundantTeam).detail("satisfiesPolicy", satisfiesPolicy(teamInfo->getServers()))
+		.detail("large", (!ddLargeTeamEnabled() && teamInfo->size() != configuration.storageTeamSize));
 		badTeams.push_back(teamInfo);
 		return;
 	}
@@ -4758,7 +4802,7 @@ Reference<TCMachineTeamInfo> DDTeamCollection::addMachineTeam(std::vector<Refere
 	// Assign machine teams to machine
 	for (auto machine : machines) {
 		// A machine's machineTeams vector should not hold duplicate machineTeam members
-		ASSERT_EQ(machine->serversOnMachine[0]->getLastKnownInterface().cacheType ,machines[0]->serversOnMachine[0]->getLastKnownInterface().cacheType);
+		// ASSERT_EQ(machine->serversOnMachine[0]->getLastKnownInterface().cacheType ,machines[0]->serversOnMachine[0]->getLastKnownInterface().cacheType);
 		ASSERT_WE_THINK(std::count(machine->machineTeams.begin(), machine->machineTeams.end(), machineTeamInfo) == 0);
 		machine->machineTeams.push_back(machineTeamInfo);
 	}
@@ -4917,36 +4961,36 @@ void DDTeamCollection::rebuildMachineLocalityMap() {
 			continue;
 		}
 		const LocalityEntry& localityEntry = machineLocalityMap.add(locality, &representativeServer->getId());
-		// machine->localityEntry = localityEntry;
+		machine->localityEntry = localityEntry;
 	}
-	sqliteLocalityMap.clear();
-	cacheLocalityMap.clear();
-	for (auto& [_, machine] : machine_info) {
-		if (machine->serversOnMachine.empty()) {
-			TraceEvent(SevWarn, "RebuildMachineLocalityMapError")
-			    .detail("Machine", machine->machineID.toString())
-			    .detail("NumServersOnMachine", 0);
-			continue;
-		}
-		if (!isMachineHealthy(machine)) {
-			continue;
-		}
-		Reference<TCServerInfo> representativeServer = machine->serversOnMachine[0];
-		auto& locality = representativeServer->getLastKnownInterface().locality;
-		if (!isValidLocality(configuration.storagePolicy, locality)) {
-			TraceEvent(SevWarn, "RebuildMachineLocalityMapError")
-			    .detail("Machine", machine->machineID.toString())
-			    .detail("InvalidLocality", locality.toString());
-			continue;
-		}
-		if(representativeServer->getLastKnownInterface().cacheType == KeyValueStoreType::NONE) {
-			const LocalityEntry& localityEntry = sqliteLocalityMap.add(locality, &representativeServer->getId()); 
-			machine->localityEntry = localityEntry;
-		} else if(representativeServer->getLastKnownInterface().cacheType == KeyValueStoreType::Cache){
-			const LocalityEntry& localityEntry = cacheLocalityMap.add(locality, &representativeServer->getId());
-			machine->localityEntry = localityEntry;
-		}
-	}
+	// sqliteLocalityMap.clear();
+	// cacheLocalityMap.clear();
+	// for (auto& [_, machine] : machine_info) {
+	// 	if (machine->serversOnMachine.empty()) {
+	// 		TraceEvent(SevWarn, "RebuildMachineLocalityMapError")
+	// 		    .detail("Machine", machine->machineID.toString())
+	// 		    .detail("NumServersOnMachine", 0);
+	// 		continue;
+	// 	}
+	// 	if (!isMachineHealthy(machine)) {
+	// 		continue;
+	// 	}
+	// 	Reference<TCServerInfo> representativeServer = machine->serversOnMachine[0];
+	// 	auto& locality = representativeServer->getLastKnownInterface().locality;
+	// 	if (!isValidLocality(configuration.storagePolicy, locality)) {
+	// 		TraceEvent(SevWarn, "RebuildMachineLocalityMapError")
+	// 		    .detail("Machine", machine->machineID.toString())
+	// 		    .detail("InvalidLocality", locality.toString());
+	// 		continue;
+	// 	}
+		// if(representativeServer->getLastKnownInterface().cacheType == KeyValueStoreType::NONE) {
+		// 	const LocalityEntry& localityEntry = sqliteLocalityMap.add(locality, &representativeServer->getId()); 
+		// 	machine->localityEntry = localityEntry;
+		// } else if(representativeServer->getLastKnownInterface().cacheType == KeyValueStoreType::Cache){
+		// 	const LocalityEntry& localityEntry = cacheLocalityMap.add(locality, &representativeServer->getId());
+		// 	machine->localityEntry = localityEntry;
+		// }
+	// }
 	TraceEvent("EndBuildLocalityMap");
 }
 
@@ -4999,7 +5043,7 @@ int DDTeamCollection::addBestMachineTeams(int machineTeamsToBuild) {
 		std::vector<UID*> bestTeam;
 		int bestScore = std::numeric_limits<int>::max();
 		int maxAttempts = SERVER_KNOBS->BEST_OF_AMT; // BEST_OF_AMT = 4
-		bool isCache = true;
+		// bool isCache = true;
 		for (int i = 0; i < maxAttempts && i < 100; ++i) {
 			// Step 3: Create a representative process for each machine.
 			// Construct forcedAttribute from leastUsedMachines.
@@ -5009,7 +5053,7 @@ int DDTeamCollection::addBestMachineTeams(int machineTeamsToBuild) {
 				// Randomly choose 1 least used machine
 				Reference<TCMachineInfo> tcMachineInfo = deterministicRandom()->randomChoice(leastUsedMachines);
 				ASSERT(!tcMachineInfo->serversOnMachine.empty());
-				if(tcMachineInfo->serversOnMachine[0]->getLastKnownInterface().cacheType == KeyValueStoreType::NONE) isCache = false;
+				// if(tcMachineInfo->serversOnMachine[0]->getLastKnownInterface().cacheType == KeyValueStoreType::NONE) isCache = false;
 				LocalityEntry process = tcMachineInfo->localityEntry;
 				forcedAttributes.push_back(process);
 				TraceEvent("ChosenMachine")
@@ -5027,10 +5071,10 @@ int DDTeamCollection::addBestMachineTeams(int machineTeamsToBuild) {
 			team.clear();
 			ASSERT_WE_THINK(forcedAttributes.size() == 1);
 			// Step 4: Reuse Policy's selectReplicas() to create team for the representative process.
-			// auto success = machineLocalityMap.selectReplicas(configuration.storagePolicy, forcedAttributes, team);
-			bool success; 
-			if(isCache) success = cacheLocalityMap.selectReplicas(configuration.storagePolicy, forcedAttributes, team);
-			else success = sqliteLocalityMap.selectReplicas(configuration.storagePolicy, forcedAttributes, team);
+			auto success = machineLocalityMap.selectReplicas(configuration.storagePolicy, forcedAttributes, team);
+			// bool success; 
+			// if(isCache) success = cacheLocalityMap.selectReplicas(configuration.storagePolicy, forcedAttributes, team);
+			// else success = sqliteLocalityMap.selectReplicas(configuration.storagePolicy, forcedAttributes, team);
 			// TraceEvent("selectReplicas").detail("isCache", isCache).detail("success", success).detail("Policy",configuration.storagePolicy.getPtr()->name());
 
 			// NOTE: selectReplicas() should always return success when storageTeamSize = 1
@@ -5039,9 +5083,9 @@ int DDTeamCollection::addBestMachineTeams(int machineTeamsToBuild) {
 				continue; // Try up to maxAttempts, since next time we may choose a different forcedAttributes
 			}
 			ASSERT_GT(forcedAttributes.size(), 0);
-			if(isCache) team.push_back((UID*)cacheLocalityMap.getObject(forcedAttributes[0]));
-			else team.push_back((UID*)sqliteLocalityMap.getObject(forcedAttributes[0]));
-			// team.push_back((UID*)machineLocalityMap.getObject(forcedAttributes[0]));
+			// if(isCache) team.push_back((UID*)cacheLocalityMap.getObject(forcedAttributes[0]));
+			// else team.push_back((UID*)sqliteLocalityMap.getObject(forcedAttributes[0]));
+			team.push_back((UID*)machineLocalityMap.getObject(forcedAttributes[0]));
 
 			// selectReplicas() may NEVER return server not in server_info.
 			for (auto& pUID : team) {
@@ -5099,7 +5143,8 @@ int DDTeamCollection::addBestMachineTeams(int machineTeamsToBuild) {
 			TraceEvent(SevWarn, "DataDistributionBuildTeams", distributorId)
 			    .detail("Primary", primary)
 			    .detail("Reason", "Unable to make desired machine Teams")
-			    .detail("Hint", "Check TraceAllInfo event");
+			    .detail("Hint", "Check TraceAllInfo event")
+				.detail("Typesss", storageType.toString());
 			lastBuildTeamsFailed = true;
 			break;
 		}
@@ -5467,7 +5512,7 @@ int DDTeamCollection::addTeamsBestOf(int teamsToBuild, int desiredTeams, int max
 					std::vector<Reference<TCServerInfo>> healthyProcesses;
 					for (auto it : machine->serversOnMachine) {
 						if (!server_status.get(it->getId()).isUnhealthy()) {
-							if(chosenServer->getLastKnownInterface().cacheType == it->getLastKnownInterface().cacheType)
+							// if(chosenServer->getLastKnownInterface().cacheType == it->getLastKnownInterface().cacheType)
 								healthyProcesses.push_back(it);
 						}
 					}
@@ -5541,6 +5586,7 @@ int DDTeamCollection::addTeamsBestOf(int teamsToBuild, int desiredTeams, int max
 	    .detail("MinMachineTeamsOnMachine", minMachineTeamsOnMachine)
 	    .detail("MaxMachineTeamsOnMachine", maxMachineTeamsOnMachine)
 	    .detail("DoBuildTeams", doBuildTeams)
+		.detail("Typesss", storageType.toString())
 	    .trackLatest(teamCollectionInfoEventHolder->trackingKey);
 
 	return addedTeams;
@@ -5559,7 +5605,7 @@ void DDTeamCollection::traceTeamCollectionInfo() const {
 	auto [minTeamsOnServer, maxTeamsOnServer] = calculateMinMaxServerTeamsOnServer();
 	auto [minMachineTeamsOnMachine, maxMachineTeamsOnMachine] = calculateMinMaxMachineTeamsOnMachine();
 
-	TraceEvent("TeamCollectionInfo", distributorId)
+	TraceEvent("TeamCollectionInfoTrace", distributorId)
 	    .detail("Primary", primary)
 	    .detail("AddedTeams", 0)
 	    .detail("TeamsToBuild", 0)
@@ -5607,7 +5653,27 @@ void DDTeamCollection::noHealthyTeams() const {
 	    .detail("NonFailedServerCount", desiredServerSet.size());
 }
 
-bool DDTeamCollection::shouldHandleServer(const StorageServerInterface& newServer) const {
+bool DDTeamCollection::shouldHandleServer(const StorageServerInterface& newServer) {
+	auto addr = newServer.stableAddress();
+	if(storageType != newServer.extraType.storageType) {
+		if(storageType==KeyValueStoreType::SSD_BTREE_V2) {
+			if(newServer.extraType.storageType == KeyValueStoreType::NONE) {
+				TraceEvent("NewServer").detail("tc", storageType.toString()).detail("new", newServer.extraType.storageType.toString()).detail("Addr", addr.toString());
+				return (includedDCs.empty() ||
+	        std::find(includedDCs.begin(), includedDCs.end(), newServer.locality.dcId()) != includedDCs.end() ||
+	        (otherTrackedDCs.present() &&
+	         std::find(otherTrackedDCs.get().begin(), otherTrackedDCs.get().end(), newServer.locality.dcId()) ==
+	             otherTrackedDCs.get().end()));
+			}
+		}
+		
+		
+		differentTypeAddr.insert(AddressExclusion(addr.ip, addr.port));
+				return false;
+	}
+	TraceEvent("NewServer").detail("tc", storageType.toString()).detail("new", newServer.extraType.storageType.toString()).detail("Addr", addr.toString());
+
+	
 	return (includedDCs.empty() ||
 	        std::find(includedDCs.begin(), includedDCs.end(), newServer.locality.dcId()) != includedDCs.end() ||
 	        (otherTrackedDCs.present() &&
@@ -5633,7 +5699,7 @@ void DDTeamCollection::addServer(StorageServerInterface newServer,
 	    .detail("ProcessID", newServer.locality.processId())
 	    .detail("ProcessClass", processClass.toString())
 	    .detail("WaitFailureToken", newServer.waitFailure.getEndpoint().token)
-	    .detail("Address", newServer.waitFailure.getEndpoint().getPrimaryAddress());
+	    .detail("Address", newServer.waitFailure.getEndpoint().getPrimaryAddress())
 		.detail("CacheType", newServer.cacheType);
 
 	auto& r = server_and_tss_info[newServer.id()] = makeReference<TCServerInfo>(
@@ -5715,18 +5781,18 @@ Reference<TCMachineInfo> DDTeamCollection::checkAndCreateMachine(Reference<TCSer
 		CODE_PROBE(true, "First storage server in process on the machine");
 		// For each machine, store the first server's localityEntry into machineInfo for later use.
 		TraceEvent("checkAndCreateMachine");
-		if(server->getLastKnownInterface().cacheType != KeyValueStoreType::Cache) {
-			LocalityEntry localityEntry = sqliteLocalityMap.add(locality, &server->getId());
-			machineInfo = makeReference<TCMachineInfo>(server, localityEntry);
-			machine_info.insert(std::make_pair(machine_id, machineInfo));
-		} else {
-			LocalityEntry localityEntry = cacheLocalityMap.add(locality, &server->getId());
-			machineInfo = makeReference<TCMachineInfo>(server, localityEntry);
-			machine_info.insert(std::make_pair(machine_id, machineInfo));
-		}
-		// LocalityEntry localityEntry = machineLocalityMap.add(locality, &server->getId());
-		// machineInfo = makeReference<TCMachineInfo>(server, localityEntry);
-		// machine_info.insert(std::make_pair(machine_id, machineInfo));
+		// if(server->getLastKnownInterface().cacheType != KeyValueStoreType::Cache) {
+		// 	LocalityEntry localityEntry = sqliteLocalityMap.add(locality, &server->getId());
+		// 	machineInfo = makeReference<TCMachineInfo>(server, localityEntry);
+		// 	machine_info.insert(std::make_pair(machine_id, machineInfo));
+		// } else {
+		// 	LocalityEntry localityEntry = cacheLocalityMap.add(locality, &server->getId());
+		// 	machineInfo = makeReference<TCMachineInfo>(server, localityEntry);
+		// 	machine_info.insert(std::make_pair(machine_id, machineInfo));
+		// }
+		LocalityEntry localityEntry = machineLocalityMap.add(locality, &server->getId());
+		machineInfo = makeReference<TCMachineInfo>(server, localityEntry);
+		machine_info.insert(std::make_pair(machine_id, machineInfo));
 	} else {
 		machineInfo = machine_info.find(machine_id)->second;
 		machineInfo->serversOnMachine.push_back(server);
@@ -6045,8 +6111,9 @@ Future<Void> DDTeamCollection::run(Reference<DDTeamCollection> teamCollection,
                                    Reference<InitialDataDistribution> initData,
                                    TeamCollectionInterface tci,
                                    Reference<IAsyncListener<RequestStream<RecruitStorageRequest>>> recruitStorage,
-                                   DDEnabledState const& ddEnabledState) {
-	return DDTeamCollectionImpl::run(teamCollection, initData, tci, recruitStorage, &ddEnabledState);
+                                   DDEnabledState const& ddEnabledState,
+								   KeyValueStoreType storageType) {
+	return DDTeamCollectionImpl::run(teamCollection, initData, tci, recruitStorage, &ddEnabledState, storageType);
 }
 
 Future<Void> DDTeamCollection::printSnapshotTeamsInfo(Reference<DDTeamCollection> self) {

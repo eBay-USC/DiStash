@@ -79,6 +79,7 @@ struct WorkerInterface {
 	RequestStream<struct UpdateServerDBInfoRequest> updateServerDBInfo;
 
 	TesterInterface testerInterface;
+	ExtraType extraType;
 
 	UID id() const { return tLog.getEndpoint().token; }
 	NetworkAddress address() const { return tLog.getEndpoint().getPrimaryAddress(); }
@@ -133,7 +134,8 @@ struct WorkerInterface {
 		           workerSnapReq,
 		           backup,
 		           encryptKeyProxy,
-		           updateServerDBInfo);
+		           updateServerDBInfo,
+				   extraType);
 	}
 };
 
@@ -399,10 +401,11 @@ struct RecruitStorageRequest {
 	std::vector<Optional<Standalone<StringRef>>> includeDCs;
 	bool criticalRecruitment; //< True if machine classes are to be ignored
 	ReplyPromise<RecruitStorageReply> reply;
+	ExtraType exraType;
 
 	template <class Ar>
 	void serialize(Ar& ar) {
-		serializer(ar, excludeMachines, excludeAddresses, includeDCs, criticalRecruitment, reply);
+		serializer(ar, excludeMachines, excludeAddresses, includeDCs, criticalRecruitment, reply, exraType);
 	}
 };
 
@@ -1199,8 +1202,7 @@ ACTOR Future<Void> fdbd(Reference<IClusterConnectionRecord> ccr,
                         std::map<std::string, std::string> manualKnobOverrides,
                         ConfigDBType configDBType,
                         bool consistencyCheckUrgentMode,
-						KeyValueStoreType cacheType,
-						CachePolicy cachePolicy);
+						ExtraType extraType);
 
 ACTOR Future<Void> clusterController(Reference<IClusterConnectionRecord> ccr,
                                      Reference<AsyncVar<Optional<ClusterControllerFullInterface>>> currentCC,
@@ -1234,8 +1236,7 @@ ACTOR Future<Void> storageServer(IKeyValueStore* persistentData,
                                  ReplyPromise<InitializeStorageReply> recruitReply,
                                  Reference<AsyncVar<ServerDBInfo> const> db,
                                  std::string folder,
-								 KeyValueStoreType cacheType,
-								 CachePolicy cachePolicy);
+								 ExtraType extraType);
 ACTOR Future<Void> storageServer(
     IKeyValueStore* persistentData,
     StorageServerInterface ssi,
@@ -1244,8 +1245,7 @@ ACTOR Future<Void> storageServer(
     Promise<Void> recovered,
     Reference<IClusterConnectionRecord>
         connRecord,
-	KeyValueStoreType cacheType,
-	CachePolicy cachePolicy); // changes pssi->id() to be the recovered ID); // changes pssi->id() to be the recovered ID
+	ExtraType extraType); // changes pssi->id() to be the recovered ID); // changes pssi->id() to be the recovered ID
 ACTOR Future<Void> masterServer(MasterInterface mi,
                                 Reference<AsyncVar<ServerDBInfo> const> db,
                                 Reference<AsyncVar<Optional<ClusterControllerFullInterface>> const> ccInterface,
@@ -1279,7 +1279,7 @@ ACTOR Future<Void> resolver(ResolverInterface resolver,
 ACTOR Future<Void> logRouter(TLogInterface interf,
                              InitializeLogRouterRequest req,
                              Reference<AsyncVar<ServerDBInfo> const> db);
-ACTOR Future<Void> dataDistributor(DataDistributorInterface ddi, Reference<AsyncVar<ServerDBInfo> const> db);
+ACTOR Future<Void> dataDistributor(DataDistributorInterface ddi, Reference<AsyncVar<ServerDBInfo> const> db, StorageTypeCollections storageTypeCollections = StorageTypeCollections());
 ACTOR Future<Void> ratekeeper(RatekeeperInterface rki, Reference<AsyncVar<ServerDBInfo> const> db);
 ACTOR Future<Void> consistencyScan(ConsistencyScanInterface csInterf, Reference<AsyncVar<ServerDBInfo> const> dbInfo);
 ACTOR Future<Void> blobManager(BlobManagerInterface bmi, Reference<AsyncVar<ServerDBInfo> const> db, int64_t epoch);

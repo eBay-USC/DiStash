@@ -917,8 +917,13 @@ static bool shardForwardMergeFeasible(DataDistributionTracker* self, KeyRange co
 		return false;
 	}
 
-	if(cacheKeys.contains(keys) != cacheKeys.contains(nextRange)) {
-		return false;
+	
+
+	for(int i=0;i<self->customBoundaries.size()-1;i++) {
+		// TraceEvent("Custom").detail("key1", self->customBoundaries[i]).detail("key2", self->customBoundaries[i+1]);
+		if(self->customBoundaries[i+1].size()==0) self->customBoundaries[i+1] = "\xff"_sr;
+		KeyRangeRef ranges(self->customBoundaries[i],self->customBoundaries[i+1]);
+		if(ranges.contains(keys) != ranges.contains(nextRange)) return false;
 	}
 
 	return shardMergeFeasible(self, keys, nextRange);
@@ -933,8 +938,11 @@ static bool shardBackwardMergeFeasible(DataDistributionTracker* self, KeyRange c
 		return false;
 	}
 
-	if(cacheKeys.contains(keys) != cacheKeys.contains(prevRange)) {
-		return false;
+	for(int i=0;i<self->customBoundaries.size()-1;i++) {
+		if(self->customBoundaries[i+1].size()==0) self->customBoundaries[i+1] = "\xff"_sr;
+		// TraceEvent("Custom").detail("key1", self->customBoundaries[i]).detail("key2", self->customBoundaries[i+1]);
+		KeyRangeRef ranges(self->customBoundaries[i],self->customBoundaries[i+1]);
+		if(ranges.contains(keys) != ranges.contains(prevRange)) return false;
 	}
 
 	return shardMergeFeasible(self, keys, prevRange);
@@ -1273,30 +1281,47 @@ ACTOR Future<Void> trackInitialShards(DataDistributionTracker* self, Reference<I
 	// SOMEDAY: Figure out what this priority should actually be
 	wait(delay(0.0, TaskPriority::DataDistribution));
 
-	state std::vector<Key> customBoundaries;
+	// state std::vector<Key> customBoundaries;
+	// for (auto it : self->userRangeConfig->ranges()) {
+	// 	customBoundaries.push_back(it->range().begin);
+	// }
+	// customBoundaries.push_back("\x00"_sr);
+	// customBoundaries.push_back("\x01"_sr);
+	self->customBoundaries.clear();
 	for (auto it : self->userRangeConfig->ranges()) {
-		customBoundaries.push_back(it->range().begin);
+		self->customBoundaries.push_back(it->range().begin);
 	}
-	customBoundaries.push_back("\x00"_sr);
-	customBoundaries.push_back("\x01"_sr);
+	for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
+		self->customBoundaries.push_back(self->storageTypeCollections.prefixes[i]);
+		// self->customBoundaries.push_back(self->storageTypeCollections.prefixes[i].withSuffix("\xff"_sr));
+	}
+
+	for(int i=0;i<self->customBoundaries.size();i++) {
+		TraceEvent("Boundary").detail("id",i).detail("key",self->customBoundaries[i]);
+	}
 
 	state int s;
 	state int customBoundary = 0;
 	for (s = 0; s < initData->shards.size() - 1; s++) {
 		Key beginKey = initData->shards[s].key;
 		Key endKey = initData->shards[s + 1].key;
+		
+		while (customBoundary < self->customBoundaries.size() && self->customBoundaries[customBoundary] <= beginKey) {
+			customBoundary++;
+		}
+		while (customBoundary < self->customBoundaries.size() && self->customBoundaries[customBoundary] < endKey) {
+			restartShardTrackers(
+			    self, KeyRangeRef(beginKey, self->customBoundaries[customBoundary]), Optional<ShardMetrics>(), true);
+			TraceEvent("TrackInitialShards", self->distributorId)
+			.detail("Begin", beginKey.toString())
+			.detail("End", self->customBoundaries[customBoundary].toString());
+			beginKey = self->customBoundaries[customBoundary];
+			customBoundary++;
+			
+		}
 		TraceEvent("TrackInitialShards", self->distributorId)
 		.detail("Begin", beginKey.toString())
 		.detail("End", endKey.toString());
-		while (customBoundary < customBoundaries.size() && customBoundaries[customBoundary] <= beginKey) {
-			customBoundary++;
-		}
-		while (customBoundary < customBoundaries.size() && customBoundaries[customBoundary] < endKey) {
-			restartShardTrackers(
-			    self, KeyRangeRef(beginKey, customBoundaries[customBoundary]), Optional<ShardMetrics>(), true);
-			beginKey = customBoundaries[customBoundary];
-			customBoundary++;
-		}
 		restartShardTrackers(self, KeyRangeRef(beginKey, endKey), Optional<ShardMetrics>(), true);
 		wait(yield(TaskPriority::DataDistribution));
 	}
@@ -1598,7 +1623,9 @@ Future<Void> DataDistributionTracker::run(
     const FutureStream<GetTopKMetricsRequest>& getTopKMetrics,
     const FutureStream<GetMetricsListRequest>& getShardMetricsList,
     const FutureStream<Promise<int64_t>>& getAverageShardBytes,
-    const FutureStream<RebalanceStorageQueueRequest>& triggerStorageQueueRebalance) {
+    const FutureStream<RebalanceStorageQueueRequest>& triggerStorageQueueRebalance,
+	StorageTypeCollections storageTypeCollections) {
+	self->storageTypeCollections = storageTypeCollections;
 	self->getShardMetrics = getShardMetrics;
 	self->getTopKMetrics = getTopKMetrics;
 	self->getShardMetricsList = getShardMetricsList;

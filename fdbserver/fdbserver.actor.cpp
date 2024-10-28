@@ -120,7 +120,7 @@ enum {
 	OPT_TRACE_FORMAT, OPT_WHITELIST_BINPATH, OPT_BLOB_CREDENTIAL_FILE, OPT_CONFIG_PATH, OPT_USE_TEST_CONFIG_DB, OPT_NO_CONFIG_DB, OPT_FAULT_INJECTION, OPT_PROFILER, OPT_PRINT_SIMTIME,
 	OPT_FLOW_PROCESS_NAME, OPT_FLOW_PROCESS_ENDPOINT, OPT_IP_TRUSTED_MASK, OPT_KMS_CONN_DISCOVERY_URL_FILE, OPT_KMS_CONNECTOR_TYPE, OPT_KMS_REST_ALLOW_NOT_SECURE_CONECTION, OPT_KMS_CONN_VALIDATION_TOKEN_DETAILS,
 	OPT_KMS_CONN_GET_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_LATEST_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_BLOB_METADATA_ENDPOINT, OPT_NEW_CLUSTER_KEY, OPT_AUTHZ_PUBLIC_KEY_FILE, OPT_USE_FUTURE_PROTOCOL_VERSION, OPT_CONSISTENCY_CHECK_URGENT_MODE,
-	OPT_CACHE_POLICY
+	OPT_CACHE_POLICY, OPT_STORAGE_PREFIX, OPT_STORAGE_TYPE, OPT_STORAGE_TYPE_FILE
 };
 
 CSimpleOpt::SOption g_rgOptions[] = {
@@ -134,8 +134,11 @@ CSimpleOpt::SOption g_rgOptions[] = {
 	{ OPT_PUBLICADDR,            "--public-address",            SO_REQ_SEP },
 	{ OPT_LISTEN,                "-l",                          SO_REQ_SEP },
 	{ OPT_LISTEN,                "--listen-address",            SO_REQ_SEP },
+	{ OPT_STORAGE_TYPE,          "--stoarge-type",             	SO_REQ_SEP },
+	{ OPT_STORAGE_PREFIX,        "--stoarge-prefix",            SO_REQ_SEP },
 	{ OPT_CACHE_TYPE,            "--cache-type",                SO_REQ_SEP },
 	{ OPT_CACHE_POLICY,          "--cache-policy",              SO_REQ_SEP },
+	{ OPT_STORAGE_TYPE_FILE,     "--storage-type-file",         SO_REQ_SEP },
 #ifdef __linux__
 	{ OPT_FILESYSTEM,           "--data-filesystem",            SO_REQ_SEP },
 	{ OPT_PROFILER_RSS_SIZE,    "--rsssize",                    SO_REQ_SEP },
@@ -1037,7 +1040,7 @@ enum class ServerRole {
 struct CLIOptions {
 	std::string commandLine;
 	std::string fileSystemPath, dataFolder, connFile, seedConnFile, seedConnString,
-	    logFolder = ".", metricsConnFile, metricsPrefix, newClusterKey, authzPublicKeyFile;
+	    logFolder = ".", metricsConnFile, metricsPrefix, newClusterKey, authzPublicKeyFile, storageTypeFile;
 	std::string logGroup = "default";
 	uint64_t rollsize = TRACE_DEFAULT_ROLL_SIZE;
 	uint64_t maxLogsSize = TRACE_DEFAULT_MAX_LOGS_SIZE;
@@ -1065,6 +1068,8 @@ struct CLIOptions {
 	bool buggifyEnabled = false, faultInjectionEnabled = true, restarting = false;
 	Optional<Standalone<StringRef>> zoneId;
 	KeyValueStoreType cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
+	Key storagePrefix;
+	StorageTypeCollections storageTypeCollections;
 	CachePolicy cachePolicy = CachePolicy::NONE;
 	Optional<Standalone<StringRef>> dcId;
 	ProcessClass processClass = ProcessClass(ProcessClass::UnsetClass, ProcessClass::CommandLineSource);
@@ -1337,6 +1342,9 @@ private:
 			case OPT_SEEDCONNFILE:
 				seedConnFile = args.OptionArg();
 				break;
+			case OPT_STORAGE_TYPE_FILE:
+				storageTypeFile = args.OptionArg();
+				break;
 			case OPT_SEEDCONNSTRING:
 				seedConnString = args.OptionArg();
 				break;
@@ -1519,7 +1527,7 @@ private:
 					// fprintf(stderr, "ERROR: Unknown machine class `%s'\n", sRole);
 				} else if(processClass == ProcessClass::PersisitentStorageClass || processClass == ProcessClass::StorageClass) {
 					cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
-					processClass._class == ProcessClass::ClassType::StorageClass;
+					processClass._class = ProcessClass::ClassType::StorageClass;
 				} else {
 					cacheType = KeyValueStoreType(KeyValueStoreType::NONE);
 				}
@@ -1533,7 +1541,7 @@ private:
 			case OPT_KEY:
 				targetKey = args.OptionArg();
 				break;
-						case OPT_CACHE_TYPE:
+			case OPT_CACHE_TYPE:
 				argStr=args.OptionArg();
 				if(argStr=="vedis"){
 					cacheType = KeyValueStoreType(KeyValueStoreType::Vedis);
@@ -1551,6 +1559,8 @@ private:
 				}else if(argStr=="cache"){
 					cacheType = KeyValueStoreType(KeyValueStoreType::Cache);
 					//
+				} else if(argStr == "ssd") {
+					cacheType = KeyValueStoreType(KeyValueStoreType::SSD_BTREE_V2);
 				}
 				else{
 					fprintf(stderr, "ERROR: memoryType not implmemented \n");
@@ -1571,6 +1581,13 @@ private:
 					flushAndExit(FDB_EXIT_ERROR);
 				}
 				break;
+			case OPT_STORAGE_PREFIX: {
+				argStr=args.OptionArg();
+				storagePrefix = Key(argStr);
+				fprintf(stderr, "OPT_STORAGE_PREFIX `%s'\n", storagePrefix.toString().c_str());
+				break;
+			}
+				
 			case OPT_MEMLIMIT:
 				ti = parse_with_suffix(args.OptionArg(), "MiB");
 				if (!ti.present()) {
@@ -1841,6 +1858,32 @@ private:
 		if (metricsConnFile != "" && metricsPrefix == "") {
 			fprintf(stderr, "If a metrics cluster file is specified, a metrics prefix is required.\n");
 			flushAndExit(FDB_EXIT_ERROR);
+		}
+
+		if(storageTypeFile.length() && fileExists(storageTypeFile)) {
+			std::string contents(readFileBytes(storageTypeFile, 100000));
+			json_spirit::mValue config;
+			if (!json_spirit::read_string(contents, config)) {
+				fprintf(stderr, "ERROR: Invalid JSON\n");
+			}
+			if (config.type() != json_spirit::obj_type) {
+				fprintf(stderr, "ERROR: Configuration file must contain a JSON object\n");
+			}
+			StatusObject configJSON = config.get_obj();
+			std::vector<std::pair<std::string, std::string>> configss;
+			for(auto i:configJSON) {
+				std::pair<std::string, std::string> cur;
+				cur.first = i.second.get_str();
+				cur.second = i.first;
+				configss.push_back(cur);
+			}
+			std::sort(configss.begin(), configss.end());
+			for(auto i:configss) {
+				KeyValueStoreType type(KeyValueStoreType::fromString(i.second));
+				KeyRef prefix = KeyRef(i.first);
+				storageTypeCollections.types.push_back(storageTypeCollections.arena, type);
+				storageTypeCollections.prefixes.push_back_deep(storageTypeCollections.arena, prefix);
+			}
 		}
 
 		bool autoPublicAddress =
@@ -2392,6 +2435,7 @@ int main(int argc, char* argv[]) {
 					dataFolder = format("fdb/%d/", opts.publicAddresses.address.port); // SOMEDAY: Better default
 
 				std::vector<Future<Void>> actors(listenErrors.begin(), listenErrors.end());
+				ExtraType extraType(opts.cacheType, opts.cacheType, opts.storagePrefix, opts.storageTypeCollections, opts.cachePolicy);
 				actors.push_back(fdbd(opts.connectionFile,
 				                      opts.localities,
 				                      opts.processClass,
@@ -2406,8 +2450,7 @@ int main(int argc, char* argv[]) {
 				                      opts.manualKnobOverrides,
 				                      opts.configDBType,
 				                      opts.consistencyCheckUrgentMode,
-									  opts.cacheType,
-									  opts.cachePolicy));
+									  extraType));
 				actors.push_back(histogramReport());
 				// actors.push_back( recurring( []{}, .001 ) );  // for ASIO latency measurement
 

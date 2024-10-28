@@ -348,6 +348,13 @@ public:
 		std::set<AddressExclusion> excludedAddresses(req.excludeAddresses.begin(), req.excludeAddresses.end());
 
 		for (auto& it : id_worker) {
+			// TraceEvent("getStorageWorkerTypes").detail("teeee", it.second.details.interf.extraType.storageType.toString()).detail("req", req.exraType.storageType.toString());
+			if(it.second.details.interf.extraType.storageType != req.exraType.storageType) {
+				if(it.second.details.interf.extraType.storageType == KeyValueStoreType::NONE && req.exraType.storageType == KeyValueStoreType::SSD_BTREE_V2) {
+					;
+				} else continue;
+			}
+			
 			TraceEvent(SevVerbose, "RecruitStorageTry")
 			    .detail("Worker", it.second.details.interf.address())
 			    .detail("WorkerAvailable", workerAvailable(it.second, false))
@@ -378,6 +385,7 @@ public:
 			ProcessClass::Fitness bestFit = ProcessClass::NeverAssign;
 			Optional<WorkerDetails> bestInfo;
 			for (auto& it : id_worker) {
+				if(it.second.details.interf.extraType.storageType != req.exraType.storageType) continue;
 				ProcessClass::Fitness fit = it.second.details.processClass.machineClassFitness(ProcessClass::Storage);
 				if (workerAvailable(it.second, false) && it.second.details.recoveredDiskFiles &&
 				    !excludedMachines.count(it.second.details.interf.locality.zoneId()) &&

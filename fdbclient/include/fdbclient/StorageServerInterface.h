@@ -94,6 +94,7 @@ struct StorageServerInterface {
 	UID uniqueID;
 	Optional<UID> tssPairID;
 	KeyValueStoreType cacheType = KeyValueStoreType::NONE;
+	ExtraType extraType;
 
 	PublicRequestStream<struct GetValueRequest> getValue;
 	PublicRequestStream<struct GetKeyRequest> getKey;
@@ -152,12 +153,12 @@ public:
 		if (ar.protocolVersion().hasSmallEndpoints()) {
 			if (ar.protocolVersion().hasTSS()) {
 				if (ar.protocolVersion().hasStorageInterfaceReadiness()) {
-					serializer(ar, uniqueID, locality, getValue, tssPairID, acceptingRequests, cacheType);
+					serializer(ar, uniqueID, locality, getValue, tssPairID, acceptingRequests, cacheType, extraType);
 				} else {
-					serializer(ar, uniqueID, locality, getValue, tssPairID, cacheType);
+					serializer(ar, uniqueID, locality, getValue, tssPairID, cacheType, extraType);
 				}
 			} else {
-				serializer(ar, uniqueID, locality, getValue, cacheType);
+				serializer(ar, uniqueID, locality, getValue, cacheType, extraType);
 			}
 			if (Ar::isDeserializing) {
 				getKey = PublicRequestStream<struct GetKeyRequest>(getValue.getEndpoint().getAdjustedEndpoint(1));
@@ -229,7 +230,8 @@ public:
 			           getQueuingMetrics,
 			           getKeyValueStoreType,
 					   getMultiValues,
-					   cacheType);
+					   cacheType,
+					   extraType);
 			if (ar.protocolVersion().hasWatches()) {
 				serializer(ar, watchValue);
 			}
@@ -269,6 +271,8 @@ public:
 		FlowTransport::transport().addEndpoints(streams);
 	}
 };
+
+
 
 struct StorageInfo : NonCopyable, public ReferenceCounted<StorageInfo> {
 	Tag tag;

@@ -386,7 +386,7 @@ std::string filenameFromId(KeyValueStoreType storeType, std::string folder, std:
 		return joinPath(folder, prefix + id.toString() + ".fdb");
 	else if (storeType == KeyValueStoreType::SSD_BTREE_V2)
 		return joinPath(folder, prefix + id.toString() + ".sqlite");
-	else if (storeType == KeyValueStoreType::MEMORY || storeType == KeyValueStoreType::MEMORY_RADIXTREE)
+	else if (storeType == KeyValueStoreType::MEMORY || storeType == KeyValueStoreType::MEMORY_RADIXTREE || storeType == KeyValueStoreType::Cache)
 		return joinPath(folder, prefix + id.toString() + "-");
 	else if (storeType == KeyValueStoreType::SSD_REDWOOD_V1)
 		return joinPath(folder, prefix + id.toString() + ".redwood-v1");
@@ -1628,8 +1628,7 @@ ACTOR Future<Void> storageServerRollbackRebooter(std::set<std::pair<UID, KeyValu
                                                  IKeyValueStore* store,
                                                  bool validateDataFiles,
                                                  Promise<Void>* rebootKVStore,
-												 KeyValueStoreType cacheType,
-												 CachePolicy cachePolicy) {
+												 ExtraType extraType) {
 	state TrackRunningStorage _(id, storeType, locality, filename, runningStorages, storageCleaners);
 	loop {
 		ErrorOr<Void> e = wait(errorOr(prevStorageServer));
@@ -1661,7 +1660,7 @@ ACTOR Future<Void> storageServerRollbackRebooter(std::set<std::pair<UID, KeyValu
 			                deterministicRandom()->coinflip())
 			             : true),
 			    db,
-				{}, 0LL, cacheType, cachePolicy);
+				{}, 0LL, extraType);
 			Promise<Void> nextRebootKVStorePromise;
 			filesClosed->add(store->onClosed() ||
 			                 nextRebootKVStorePromise
@@ -1677,7 +1676,8 @@ ACTOR Future<Void> storageServerRollbackRebooter(std::set<std::pair<UID, KeyValu
 		recruited.tssPairID =
 		    isTss ? Optional<UID>(UID()) : Optional<UID>(); // set this here since we use its presence to determine
 		                                                    // whether this server is a tss or not
-		recruited.cacheType = cacheType;
+		recruited.cacheType = extraType.cacheType;
+		recruited.extraType = extraType;
 		recruited.initEndpoints();
 
 		DUMPTOKEN(recruited.getValue);
@@ -1700,7 +1700,7 @@ ACTOR Future<Void> storageServerRollbackRebooter(std::set<std::pair<UID, KeyValu
 		DUMPTOKEN(recruited.changeFeedVersionUpdate);
 
 		prevStorageServer =
-		    storageServer(store, recruited, db, folder, Promise<Void>(), Reference<IClusterConnectionRecord>(nullptr), cacheType, cachePolicy);
+		    storageServer(store, recruited, db, folder, Promise<Void>(), Reference<IClusterConnectionRecord>(nullptr), extraType);
 		prevStorageServer = handleIOErrors(prevStorageServer, store, id, store->onClosed());
 	}
 }
@@ -2101,8 +2101,8 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
                                 Reference<LocalConfiguration> localConfig,
                                 Reference<AsyncVar<Optional<UID>>> clusterId,
                                 bool consistencyCheckUrgentMode,
-								KeyValueStoreType cacheType,
-								CachePolicy cachePolicy) {
+								ExtraType extraType) {
+	state ExtraType extraType_ = extraType;
 	state PromiseStream<ErrorInfo> errors;
 	state Reference<AsyncVar<Optional<DataDistributorInterface>>> ddInterf(
 	    new AsyncVar<Optional<DataDistributorInterface>>());
@@ -2272,8 +2272,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 				    dbInfo,
 					{},
 					0LL,
-					cacheType,
-					cachePolicy);
+					extraType);
 				Future<Void> kvClosed =
 				    kv->onClosed() ||
 				    rebootKVSPromise.getFuture() /* clear the onClosed() Future in actorCollection when rebooting */;
@@ -2289,7 +2288,8 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 				StorageServerInterface recruited;
 				recruited.uniqueID = s.storeID;
 				recruited.locality = locality;
-				recruited.cacheType = cacheType;
+				recruited.cacheType = extraType.cacheType;
+				recruited.extraType = extraType;
 				recruited.tssPairID =
 				    isTss ? Optional<UID>(UID())
 				          : Optional<UID>(); // presence of optional is used as source of truth for tss vs not.
@@ -2322,7 +2322,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 				DUMPTOKEN(recruited.changeFeedVersionUpdate);
 
 				Promise<Void> recovery;
-				Future<Void> f = storageServer(kv, recruited, dbInfo, folder, recovery, connRecord, cacheType, cachePolicy);
+				Future<Void> f = storageServer(kv, recruited, dbInfo, folder, recovery, connRecord, extraType);
 				recoveries.push_back(recovery.getFuture());
 				f = handleIOErrors(f, kv, s.storeID, kvClosed);
 				f = storageServerRollbackRebooter(&runningStorages,
@@ -2340,8 +2340,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 				                                  kv,
 				                                  validateDataFiles,
 				                                  &rebootKVSPromise,
-												  cacheType,
-												  cachePolicy);
+												  extraType);
 				errorForwarders.add(forwardError(errors, ssRole, recruited.id(), f));
 			} else if (s.storedComponent == DiskStore::TLogData) {
 				LocalLineage _;
@@ -2460,7 +2459,8 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 			hasCache = true;
 			StorageServerInterface recruited;
 			recruited.locality = locality;
-			recruited.cacheType = cacheType;
+			recruited.cacheType = extraType.cacheType;
+			recruited.extraType = extraType;
 			recruited.initEndpoints();
 
 			std::map<std::string, std::string> details;
@@ -2512,6 +2512,8 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 		    },
 		    waitForAll(recoveries));
 		errorForwarders.add(recoverDiskFiles);
+
+		interf.extraType = extraType_;
 
 		errorForwarders.add(registrationClient(ccInterface,
 		                                       interf,
@@ -2689,7 +2691,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 					startRole(Role::DATA_DISTRIBUTOR, recruited.id(), interf.id());
 					DUMPTOKEN(recruited.waitFailure);
 
-					Future<Void> dataDistributorProcess = dataDistributor(recruited, dbInfo);
+					Future<Void> dataDistributorProcess = dataDistributor(recruited, dbInfo, extraType_.storageTypeColelctions);
 					errorForwarders.add(forwardError(
 					    errors,
 					    Role::DATA_DISTRIBUTOR,
@@ -3008,7 +3010,8 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 					StorageServerInterface recruited(req.interfaceId);
 					recruited.locality = locality;
 					recruited.tssPairID = isTss ? req.tssPairIDAndVersion.get().first : Optional<UID>();
-					recruited.cacheType = cacheType;
+					recruited.cacheType = extraType.cacheType;
+					recruited.extraType = extraType;
 					recruited.initEndpoints();
 
 					std::map<std::string, std::string> details;
@@ -3062,8 +3065,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 					    dbInfo,
 					    req.encryptMode,
 						0LL,
-						cacheType,
-						cachePolicy);
+						extraType);
 					TraceEvent("StorageServerInitProgress", recruited.id())
 					    .detail("ReqID", req.reqId)
 					    .detail("StorageType", req.storeType.toString())
@@ -3085,8 +3087,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 					                               storageReady,
 					                               dbInfo,
 					                               folder,
-												   cacheType,
-												   cachePolicy);
+												   extraType);
 					s = handleIOErrors(s, data, recruited.id(), kvClosed);
 					s = storageCache.removeOnReady(req.reqId, s);
 					s = storageServerRollbackRebooter(&runningStorages,
@@ -3104,8 +3105,7 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 					                                  data,
 					                                  false,
 					                                  &rebootKVSPromise2,
-													  cacheType,
-													  cachePolicy);
+													  extraType);
 					errorForwarders.add(forwardError(errors, ssRole, recruited.id(), s));
 				} else if (storageCache.exists(req.reqId)) {
 					forwardPromise(req.reply, storageCache.get(req.reqId));
@@ -4101,11 +4101,10 @@ ACTOR Future<Void> fdbd(Reference<IClusterConnectionRecord> connRecord,
                         std::map<std::string, std::string> manualKnobOverrides,
                         ConfigDBType configDBType,
                         bool consistencyCheckUrgentMode,
-						KeyValueStoreType cacheType,
-						CachePolicy cachePolicy) {
+						ExtraType extraType) {
 	fprintf(stderr,"inside fdbd\n");
-	fprintf(stderr,"cacheType: %d\n",cacheType.storeType());
-	fprintf(stderr,"cachePolicy: %d\n",static_cast<int>(cachePolicy));
+	fprintf(stderr,"cacheType: %d\n",extraType.cacheType.storeType());
+	fprintf(stderr,"cachePolicy: %d\n",static_cast<int>(extraType.cachePolicy));
 	state std::vector<Future<Void>> actors;
 	state Reference<ConfigNode> configNode;
 	state Reference<LocalConfiguration> localConfig;
@@ -4203,8 +4202,7 @@ ACTOR Future<Void> fdbd(Reference<IClusterConnectionRecord> connRecord,
 		                                                 localConfig,
 		                                                 clusterId,
 		                                                 consistencyCheckUrgentMode,
-														 cacheType,
-														 cachePolicy),
+														 extraType),
 		                                    "WorkerServer",
 		                                    UID(),
 		                                    &normalWorkerErrors()));

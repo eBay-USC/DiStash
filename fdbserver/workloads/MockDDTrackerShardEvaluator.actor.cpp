@@ -173,7 +173,8 @@ struct MockDDTrackerShardEvaluatorWorkload : public MockDDTestWorkload {
 		                                        getTopKMetrics.getFuture(),
 		                                        getShardMetricsList.getFuture(),
 		                                        getAverageShardBytes.getFuture(),
-		                                        triggerStorageQueueRebalance.getFuture()));
+		                                        triggerStorageQueueRebalance.getFuture(),
+												StorageTypeCollections()));
 
 		actors.add(relocateShardReporter(this, output.getFuture()));
 

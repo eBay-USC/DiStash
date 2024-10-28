@@ -211,8 +211,7 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
                             Reference<AsyncVar<struct ServerDBInfo> const> db = {},
                             Optional<EncryptionAtRestMode> encryptionMode = {},
                             int64_t pageCacheBytes = 0,
-							KeyValueStoreType cacheType = KeyValueStoreType::NONE,
-                            CachePolicy cachePolicy = CachePolicy::NONE);
+							ExtraType extraType = ExtraType());
 
 void GenerateIOLogChecksumFile(std::string filename);
 Future<Void> KVFileCheck(std::string const& filename, bool const& integrity);

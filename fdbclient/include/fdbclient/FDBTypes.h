@@ -1049,6 +1049,31 @@ enum class CachePolicy {
 	CAMP
 };
 
+struct StorageTypeCollections {
+	constexpr static FileIdentifier file_identifier = 2394216;
+	Arena arena;
+	VectorRef<KeyRef> prefixes;
+	VectorRef<KeyValueStoreType> types;
+	template <typename Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, prefixes, types, arena);
+	}
+};
+
+struct ExtraType {
+	CachePolicy cachePolicy = CachePolicy::NONE;
+	KeyValueStoreType storageType, cacheType;
+	Key storagePrefix;
+	StorageTypeCollections storageTypeColelctions;
+	ExtraType() {}
+	ExtraType(KeyValueStoreType storageType, KeyValueStoreType cacheType, Key storagePrefix, StorageTypeCollections storageTypeColelctions, CachePolicy cachePolicy = CachePolicy::NONE) : storageType(storageType), storagePrefix(storagePrefix), cachePolicy(cachePolicy), cacheType(cacheType),storageTypeColelctions(storageTypeColelctions) {}
+	template <typename Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, cachePolicy, storageType, cacheType, storagePrefix, storageTypeColelctions);
+	}
+
+};
+
 struct TLogVersion {
 	enum Version {
 		UNSET = 0,

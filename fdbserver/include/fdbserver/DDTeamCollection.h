@@ -224,6 +224,7 @@ protected:
 	std::vector<UID> allServers;
 	int64_t unhealthyServers;
 	std::map<int, int> priority_teams;
+	KeyValueStoreType storageType;
 	std::map<UID, Reference<TCServerInfo>> tss_info_by_pair;
 	std::map<UID, Reference<TCServerInfo>> server_and_tss_info; // TODO could replace this with an efficient way to do a
 	                                                            // read-only concatenation of 2 data structures?
@@ -264,6 +265,8 @@ protected:
 	bool isTssRecruiting; // If tss recruiting is waiting on a pair, don't consider DD recruiting for the purposes of
 	                      // QuietDB
 
+	std::set<AddressExclusion>
+	    differentTypeAddr;
 	std::set<AddressExclusion>
 	    invalidLocalityAddr; // These address have invalidLocality for the configured storagePolicy
 
@@ -313,7 +316,6 @@ protected:
 	UID distributorId;
 
 	LocalityMap<UID> machineLocalityMap; // locality info of machines
-	LocalityMap<UID> cacheLocalityMap, sqliteLocalityMap;
 
 	Reference<DDConfiguration::RangeConfigMapSnapshot> userRangeConfig;
 	CoalescedKeyRangeMap<bool> underReplication;
@@ -435,7 +437,7 @@ protected:
 	// buildTeams will not count teams larger than teamSize against the desired teams.
 	Future<Void> buildTeams();
 
-	bool shouldHandleServer(const StorageServerInterface& newServer) const;
+	bool shouldHandleServer(const StorageServerInterface& newServer);
 
 	// Check if the serverTeam belongs to a machine team; If not, create the machine team
 	// Note: This function may make the machine team number larger than the desired machine team number
@@ -738,7 +740,8 @@ public:
 	                        Reference<InitialDataDistribution> initData,
 	                        TeamCollectionInterface tci,
 	                        Reference<IAsyncListener<RequestStream<RecruitStorageRequest>>> recruitStorage,
-	                        DDEnabledState const& ddEnabledState);
+	                        DDEnabledState const& ddEnabledState,
+							KeyValueStoreType storageType);
 
 	// Take a snapshot of necessary data structures from `DDTeamCollection` and print them out with yields to avoid slow
 	// task on the run loop.

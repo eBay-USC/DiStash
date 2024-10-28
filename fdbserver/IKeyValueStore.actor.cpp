@@ -33,9 +33,10 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
                             Reference<AsyncVar<ServerDBInfo> const> db,
                             Optional<EncryptionAtRestMode> encryptionMode,
                             int64_t pageCacheBytes,
-							KeyValueStoreType cacheType,
-							CachePolicy cachePolicy) {
+							ExtraType extraType) {
 	// Only Redwood support encryption currently.
+	KeyValueStoreType cacheType = extraType.storageType;
+	CachePolicy cachePolicy = extraType.cachePolicy;
 	if (encryptionMode.present() && encryptionMode.get().isEncryptionEnabled() &&
 	    storeType != KeyValueStoreType::SSD_REDWOOD_V1) {
 		TraceEvent(SevWarn, "KVStoreTypeNotSupportingEncryption")
