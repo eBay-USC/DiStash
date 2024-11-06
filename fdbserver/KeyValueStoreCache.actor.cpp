@@ -607,7 +607,9 @@ public:
         cache->resyncLog();
     }
 
-	void enableSnapshot() override{}
+	void enableSnapshot() override{
+        cache->enableSnapshot();
+    }
 
 	// Create a checkpoint.
 	Future<CheckpointMetaData> checkpoint(const CheckpointRequest& request) override{ 

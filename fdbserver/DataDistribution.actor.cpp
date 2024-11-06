@@ -896,14 +896,22 @@ ACTOR Future<Void> monitorPhysicalShardStatus(Reference<PhysicalShardCollection>
 ACTOR Future<Void> relocateShardForward(Reference<DataDistributor> self, TaskPriority taskID = TaskPriority::DefaultYield) {
 	loop {
 		RelocateShard shard = waitNext(self->relocationProducer.getFuture());
+		int flag = 0;
 		for(int i=0;i<self->storageTypeCollections.prefixes.size();i++) {
 			Key key = self->storageTypeCollections.prefixes[i];
 			if(shard.keys.intersects(KeyRangeRef(key, key.withSuffix("\xff"_sr)))) {
+				flag = 1;
 				self->relocationConsumer[i].send(shard);
 				TraceEvent("relocateShardForward").detail("ShardKey", shard.keys).detail("prefix_key", key);
 				break;
 			}
 		}
+		if(!flag) {
+			TraceEvent("relocateShardForwardLast").detail("ShardKey", shard.keys);
+			self->relocationConsumer[self->storageTypeCollections.prefixes.size()-1].send(shard);
+		}
+
+
 		wait(yield(taskID));
 	}
 }
@@ -3382,7 +3390,7 @@ ACTOR Future<Void> dataDistributor(DataDistributorInterface di, Reference<AsyncV
 	state std::map<UID, ErrorOr<Void>> ddSnapReqResultMap;
 	self->addActor.send(actors.getResult());
 	self->addActor.send(traceRole(Role::DATA_DISTRIBUTOR, di.id()));
-
+	TraceEvent("DDSTC").detail("size", storageTypeCollections.prefixes.size());
 	try {
 		TraceEvent("DataDistributorRunning", di.id());
 		self->addActor.send(waitFailureServer(di.waitFailure.getFuture()));

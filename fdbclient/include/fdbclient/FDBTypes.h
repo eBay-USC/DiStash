@@ -1065,7 +1065,9 @@ struct ExtraType {
 	KeyValueStoreType storageType, cacheType;
 	Key storagePrefix;
 	StorageTypeCollections storageTypeColelctions;
-	ExtraType() {}
+	ExtraType() {
+		storageType = cacheType = KeyValueStoreType::NONE;
+	}
 	ExtraType(KeyValueStoreType storageType, KeyValueStoreType cacheType, Key storagePrefix, StorageTypeCollections storageTypeColelctions, CachePolicy cachePolicy = CachePolicy::NONE) : storageType(storageType), storagePrefix(storagePrefix), cachePolicy(cachePolicy), cacheType(cacheType),storageTypeColelctions(storageTypeColelctions) {}
 	template <typename Ar>
 	void serialize(Ar& ar) {

@@ -360,8 +360,12 @@ ACTOR Future<Void> newSeedServers(Reference<ClusterRecoveryData> self,
 		isr.seedTag = dcId_tags.count(recruits.storageServers[idx].locality.dcId())
 		                  ? dcId_tags[recruits.storageServers[idx].locality.dcId()]
 		                  : Tag(nextLocality, 0);
-		// isr.storeType = self->configuration.storageServerStoreType;
-		isr.storeType = KeyValueStoreType::MEMORY;
+		isr.storeType = recruits.storageServers[idx].extraType.storageType;
+		if(isr.storeType == KeyValueStoreType::NONE || isr.storeType == KeyValueStoreType::END) {
+			isr.storeType = self->configuration.storageServerStoreType;
+		}
+		TraceEvent("NewSeedServer").detail("now", recruits.storageServers[idx].extraType.storageType).detail("ipp", recruits.storageServers[idx].stableAddress().toString());
+		// isr.storeType = KeyValueStoreType::MEMORY;
 		isr.reqId = deterministicRandom()->randomUniqueID();
 		isr.interfaceId = deterministicRandom()->randomUniqueID();
 		isr.initialClusterVersion = self->recoveryTransactionVersion;

@@ -2888,10 +2888,10 @@ void ReadYourWritesTransaction::reset() {
 }
 
 KeyRef ReadYourWritesTransaction::getMaxReadKey() {
-	if (options.readSystemKeys)
+	// if (options.readSystemKeys)
 		return systemKeys.end;
-	else
-		return normalKeys.end;
+	// else
+		// return normalKeys.end;
 }
 
 KeyRef ReadYourWritesTransaction::getMaxWriteKey() {
