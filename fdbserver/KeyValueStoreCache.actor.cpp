@@ -505,7 +505,7 @@ public:
             ++cacheStatus.readKey;
             if(flag == 0) {
                 ++cacheStatus.missKey;
-                return Optional<Value>();
+                // return Optional<Value>();
             } else ++cacheStatus.hitKey;
             
         }

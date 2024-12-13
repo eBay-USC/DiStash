@@ -508,7 +508,7 @@ public:
 				// Some overloads of addConflictRange() require it to point to the "right" key and others don't.  The
 				// corresponding overloads of read() have to provide that guarantee!
 				if (!snapshot) {
-					// addConflictRange(ryw, req, it.extractWriteMapIterator(), result);
+					addConflictRange(ryw, req, it.extractWriteMapIterator(), result);
 				}
 				return result;
 			}
