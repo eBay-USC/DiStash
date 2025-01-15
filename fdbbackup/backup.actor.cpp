@@ -168,6 +168,7 @@ enum {
 
 	// Shared constants
 	OPT_CLUSTERFILE,
+	OPT_STORAGETYPE,
 	OPT_QUIET,
 	OPT_DRYRUN,
 	OPT_FORCE,
@@ -212,6 +213,7 @@ CSimpleOpt::SOption g_rgAgentOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_KNOB, "--knob-", SO_REQ_SEP },
 	{ OPT_VERSION, "--version", SO_NONE },
 	{ OPT_VERSION, "-v", SO_NONE },
@@ -243,6 +245,7 @@ CSimpleOpt::SOption g_rgBackupStartOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_WAITFORDONE, "-w", SO_NONE },
 	{ OPT_WAITFORDONE, "--waitfordone", SO_NONE },
 	{ OPT_NOSTOPWHENDONE, "-z", SO_NONE },
@@ -307,6 +310,7 @@ CSimpleOpt::SOption g_rgBackupModifyOptions[] = {
 	{ OPT_KNOB, "--knob-", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TAGNAME, "-t", SO_REQ_SEP },
 	{ OPT_TAGNAME, "--tagname", SO_REQ_SEP },
 	{ OPT_MOD_VERIFY_UID, "--verify-uid", SO_REQ_SEP },
@@ -326,6 +330,7 @@ CSimpleOpt::SOption g_rgBackupStatusOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_ERRORLIMIT, "-e", SO_REQ_SEP },
 	{ OPT_ERRORLIMIT, "--errorlimit", SO_REQ_SEP },
 	{ OPT_TAGNAME, "-t", SO_REQ_SEP },
@@ -356,6 +361,7 @@ CSimpleOpt::SOption g_rgBackupAbortOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TAGNAME, "-t", SO_REQ_SEP },
 	{ OPT_TAGNAME, "--tagname", SO_REQ_SEP },
 	{ OPT_TRACE, "--log", SO_NONE },
@@ -383,6 +389,7 @@ CSimpleOpt::SOption g_rgBackupCleanupOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TRACE, "--log", SO_NONE },
 	{ OPT_TRACE_DIR, "--logdir", SO_REQ_SEP },
 	{ OPT_TRACE_FORMAT, "--trace-format", SO_REQ_SEP },
@@ -410,6 +417,7 @@ CSimpleOpt::SOption g_rgBackupDiscontinueOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TAGNAME, "-t", SO_REQ_SEP },
 	{ OPT_TAGNAME, "--tagname", SO_REQ_SEP },
 	{ OPT_WAITFORDONE, "-w", SO_NONE },
@@ -439,6 +447,7 @@ CSimpleOpt::SOption g_rgBackupWaitOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TAGNAME, "-t", SO_REQ_SEP },
 	{ OPT_TAGNAME, "--tagname", SO_REQ_SEP },
 	{ OPT_NOSTOPWHENDONE, "-z", SO_NONE },
@@ -468,6 +477,7 @@ CSimpleOpt::SOption g_rgBackupPauseOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TRACE, "--log", SO_NONE },
 	{ OPT_TRACE_DIR, "--logdir", SO_REQ_SEP },
 	{ OPT_TRACE_FORMAT, "--trace-format", SO_REQ_SEP },
@@ -493,6 +503,7 @@ CSimpleOpt::SOption g_rgBackupExpireOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_DESTCONTAINER, "-d", SO_REQ_SEP },
 	{ OPT_DESTCONTAINER, "--destcontainer", SO_REQ_SEP },
 	{ OPT_PROXY, "--proxy", SO_REQ_SEP },
@@ -557,6 +568,7 @@ CSimpleOpt::SOption g_rgBackupDescribeOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_DESTCONTAINER, "-d", SO_REQ_SEP },
 	{ OPT_DESTCONTAINER, "--destcontainer", SO_REQ_SEP },
 	{ OPT_PROXY, "--proxy", SO_REQ_SEP },
@@ -589,6 +601,7 @@ CSimpleOpt::SOption g_rgBackupDumpOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_DESTCONTAINER, "-d", SO_REQ_SEP },
 	{ OPT_DESTCONTAINER, "--destcontainer", SO_REQ_SEP },
 	{ OPT_PROXY, "--proxy", SO_REQ_SEP },
@@ -619,6 +632,7 @@ CSimpleOpt::SOption g_rgBackupTagsOptions[] = {
 #endif
 	{ OPT_CLUSTERFILE, "-C", SO_REQ_SEP },
 	{ OPT_CLUSTERFILE, "--cluster-file", SO_REQ_SEP },
+	{ OPT_STORAGETYPE, "--storage-type-file", SO_REQ_SEP},
 	{ OPT_TRACE, "--log", SO_NONE },
 	{ OPT_TRACE_DIR, "--logdir", SO_REQ_SEP },
 	{ OPT_TRACE_FORMAT, "--trace-format", SO_REQ_SEP },
@@ -3713,6 +3727,8 @@ int main(int argc, char* argv[]) {
 				break;
 			case OPT_CLUSTERFILE:
 				clusterFile = args->OptionArg();
+				break;
+			case OPT_STORAGETYPE:
 				break;
 			case OPT_DEST_CLUSTER:
 				clusterFile = args->OptionArg();
