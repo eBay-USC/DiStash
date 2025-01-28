@@ -47,27 +47,44 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
 	if (openRemotely) {
 		return openRemoteKVStore(storeType, filename, logID, memoryLimit, checkChecksums, checkIntegrity);
 	}
-		if(cacheType != KeyValueStoreType::NONE) {
+	if(cacheType != KeyValueStoreType::NONE) {
 		std::string cachename;
 		if(filename .find("_cache_")!=std::string::npos) {
 			cachename = filename;
 		} else cachename = filename + "_cache_";
 		TraceEvent("cachename").detail("name", cachename);
+		IKeyValueStore* cur = nullptr;
 		switch (cacheType) {
 			case KeyValueStoreType::HYBRID:
-				return keyValueStoreHybrid(
+				cur = keyValueStoreHybrid(
 					keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, checkChecksums, checkIntegrity),
 					keyValueStoreCache(KeyValueStoreType::MEMORY, cachename, logID, memoryLimit, cachePolicy)
 				);
+				break;
 			case KeyValueStoreType::Memcached:
-				return keyValueStoreMemcached(NetworkAddress::parse("127.0.0.1:11211"), KeyValueStoreType::Memcached, logID);
+				cur = keyValueStoreMemcached(NetworkAddress::parse("127.0.0.1:11211"), KeyValueStoreType::Memcached, logID);
+				break;
 			case KeyValueStoreType::Vedis:
-				return keyValueStoreRedis(KeyValueStoreType::Vedis, logID);
+				cur = keyValueStoreRedis(KeyValueStoreType::Vedis, logID);
+				break;
 		// return keyValueStoreMemory(filename, logID, memoryLimit);
 			case KeyValueStoreType::Cache:
-				return keyValueStoreCache(KeyValueStoreType::MEMORY, cachename, logID, memoryLimit, cachePolicy);
+				cur = keyValueStoreCache(KeyValueStoreType::MEMORY, cachename, logID, memoryLimit, cachePolicy);
+				break;
 			case KeyValueStoreType::MEMORY:
-				return keyValueStoreMemory(cachename, logID, memoryLimit);
+				cur = keyValueStoreMemory(cachename, logID, memoryLimit);
+				break;
+		}
+		if(cur != nullptr) {
+			extraType.storagePrefix = "\x01"_sr;
+			for(int i=0;i<extraType.storageTypeColelctions.types.size();i++) {
+				if(cacheType == extraType.storageTypeColelctions.types[i]) {
+					extraType.storagePrefix = extraType.storageTypeColelctions.prefixes[i];
+				}
+			}
+			cur->setExtraType(extraType);
+			TraceEvent("cache").detail("name", cachename).detail("prefix", extraType.storagePrefix);
+			return cur;
 		}
 	}
 	switch (storeType) {

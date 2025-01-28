@@ -439,8 +439,15 @@ private:
 				data.erase(data.lower_bound(o->p1), data.end());
 			} else
 				ASSERT(false);
-			if(log) 
-				log_location = log_op(o->op, o->p1, o->p2);
+			if(log) {
+				if(this->isCache() && o->p1.startsWith(this->extraType.storagePrefix)) {
+					// TraceEvent("skiplog").detail("keyy", o->p1).detail("prefix", extraType.storagePrefix);
+				}
+				else {
+					// TraceEvent("notskiplog").detail("keyy", o->p1).detail("prefix", extraType.storagePrefix);
+					log_location = log_op(o->op, o->p1, o->p2);
+				}
+			}
 			// if (log && !o->p1.startsWith("\x00"_sr))
 				// log_location = log_op(o->op, o->p1, o->p2);
 		}

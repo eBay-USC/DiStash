@@ -145,8 +145,13 @@ public:
 	// Obtain the encryption mode of the storage. The encryption mode needs to match the encryption mode of the cluster.
 	virtual Future<EncryptionAtRestMode> encryptionMode() = 0;
 
+	virtual ExtraType getExtraType() {return extraType;}
+	virtual bool isCache() {return isCache_;}
+	virtual void setExtraType(ExtraType extraType) {this->extraType =  extraType;this->isCache_ = true;}
 protected:
 	virtual ~IKeyValueStore() {}
+	bool isCache_ = false;
+	ExtraType extraType;
 };
 
 extern IKeyValueStore* keyValueStoreSQLite(std::string const& filename,
