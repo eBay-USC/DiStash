@@ -83,7 +83,7 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
 				}
 			}
 			cur->setExtraType(extraType);
-			TraceEvent("cache").detail("name", cachename).detail("prefix", extraType.storagePrefix);
+			TraceEvent("cache").detail("name", cachename).detail("prefix", extraType.storagePrefix).detail("isLog", extraType.is_log);
 			return cur;
 		}
 	}

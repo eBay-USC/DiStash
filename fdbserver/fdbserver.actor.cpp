@@ -120,7 +120,7 @@ enum {
 	OPT_TRACE_FORMAT, OPT_WHITELIST_BINPATH, OPT_BLOB_CREDENTIAL_FILE, OPT_CONFIG_PATH, OPT_USE_TEST_CONFIG_DB, OPT_NO_CONFIG_DB, OPT_FAULT_INJECTION, OPT_PROFILER, OPT_PRINT_SIMTIME,
 	OPT_FLOW_PROCESS_NAME, OPT_FLOW_PROCESS_ENDPOINT, OPT_IP_TRUSTED_MASK, OPT_KMS_CONN_DISCOVERY_URL_FILE, OPT_KMS_CONNECTOR_TYPE, OPT_KMS_REST_ALLOW_NOT_SECURE_CONECTION, OPT_KMS_CONN_VALIDATION_TOKEN_DETAILS,
 	OPT_KMS_CONN_GET_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_LATEST_ENCRYPTION_KEYS_ENDPOINT, OPT_KMS_CONN_GET_BLOB_METADATA_ENDPOINT, OPT_NEW_CLUSTER_KEY, OPT_AUTHZ_PUBLIC_KEY_FILE, OPT_USE_FUTURE_PROTOCOL_VERSION, OPT_CONSISTENCY_CHECK_URGENT_MODE,
-	OPT_CACHE_POLICY, OPT_STORAGE_PREFIX, OPT_STORAGE_TYPE, OPT_STORAGE_TYPE_FILE
+	OPT_CACHE_POLICY, OPT_STORAGE_PREFIX, OPT_STORAGE_TYPE, OPT_STORAGE_TYPE_FILE, OPT_IS_LOG
 };
 
 CSimpleOpt::SOption g_rgOptions[] = {
@@ -138,6 +138,7 @@ CSimpleOpt::SOption g_rgOptions[] = {
 	{ OPT_STORAGE_PREFIX,        "--stoarge-prefix",            SO_REQ_SEP },
 	{ OPT_CACHE_TYPE,            "--cache-type",                SO_REQ_SEP },
 	{ OPT_CACHE_POLICY,          "--cache-policy",              SO_REQ_SEP },
+	{ OPT_IS_LOG,                "--cache-is-log",              SO_REQ_SEP},
 	{ OPT_STORAGE_TYPE_FILE,     "--storage-type-file",         SO_REQ_SEP },
 #ifdef __linux__
 	{ OPT_FILESYSTEM,           "--data-filesystem",            SO_REQ_SEP },
@@ -1071,6 +1072,7 @@ struct CLIOptions {
 	Key storagePrefix;
 	StorageTypeCollections storageTypeCollections;
 	CachePolicy cachePolicy = CachePolicy::NONE;
+	bool isLog = true;
 	Optional<Standalone<StringRef>> dcId;
 	ProcessClass processClass = ProcessClass(ProcessClass::UnsetClass, ProcessClass::CommandLineSource);
 	bool useNet2 = true;
@@ -1576,9 +1578,18 @@ private:
 				} else if(argStr == "CAMP") {
 					cachePolicy = CachePolicy::CAMP;
 				} else{
-					fprintf(stderr, "ERROR: Cache Policy not implmemented \n");
-					printHelpTeaser(argv[0]);
-					flushAndExit(FDB_EXIT_ERROR);
+					cachePolicy = CachePolicy::NONE;
+					// fprintf(stderr, "ERROR: Cache Policy not implmemented \n");
+					// printHelpTeaser(argv[0]);
+					// flushAndExit(FDB_EXIT_ERROR);
+				}
+				break;
+			case OPT_IS_LOG:
+				argStr = args.OptionArg();
+				if(argStr == "True") {
+					isLog = true;
+				} else {
+					isLog = false;
 				}
 				break;
 			case OPT_STORAGE_PREFIX: {
@@ -2436,6 +2447,7 @@ int main(int argc, char* argv[]) {
 
 				std::vector<Future<Void>> actors(listenErrors.begin(), listenErrors.end());
 				ExtraType extraType(opts.cacheType, opts.cacheType, opts.storagePrefix, opts.storageTypeCollections, opts.cachePolicy);
+				extraType.is_log = opts.isLog;
 				actors.push_back(fdbd(opts.connectionFile,
 				                      opts.localities,
 				                      opts.processClass,

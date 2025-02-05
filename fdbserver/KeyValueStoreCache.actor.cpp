@@ -419,6 +419,10 @@ public:
 
 class KeyValueStoreCache final : public IKeyValueStore {
 public:
+    void setExtraType(ExtraType extraType) override {
+        cache->setExtraType(extraType);
+        this->isCache_ = true;
+    }
     Future<Void> getError() const override{
         return cache->getError();
     }
@@ -440,16 +444,15 @@ public:
 	void set(KeyValueRef keyValue, const Arena* arena = nullptr) override{
         int removeNum = 0;
         
-        if(!keyValue.key.startsWith("\x00"_sr) && !keyValue.key.startsWith("\xff"_sr) ) TraceEvent("WrongSetCache").detail("key", keyValue.key);
         int64_t cost = 0;
-        if(keyValue.key.startsWith("\x00"_sr) && keyValue.value.startsWith(StringRef("\x00__cost"_sr))) {
+        if(keyValue.key.startsWith(this->extraType.storagePrefix) && keyValue.value.startsWith(StringRef("\x00__cost"_sr))) {
             // TraceEvent("SplitCost1").detail("value",keyValue.value);
             cost = *((int64_t*)(keyValue.value.begin()+7));
             // TraceEvent("SplitCost3").detail("cost",cost);
             keyValue.value = keyValue.value.substr(15);
             // TraceEvent("SplitCost").detail("cost", cost).detail("value",keyValue.value);
         }
-        while(cache->getStorageBytes().available < (keyValue.expectedSize() + 10000 + 100000) * 5) {
+        while(cachePool != nullptr & cache->getStorageBytes().available < (keyValue.expectedSize() + 10000 + 100000) * 5) {
             if(cachePool->empty()) break;
             // TraceEvent("LRU Remove0", UID());
             Key cur = cachePool->remove();
@@ -464,16 +467,16 @@ public:
             
             cache->commit();
             cacheStatus.evictionByte+= cache->getStorageBytes().available-tmp;
+            if(removeNum%100==0) {
+                TraceEvent("LRU Size Remove", UID()).detail("Num", cachePool->size())
+                .detail("size", cache->getStorageBytes().toString())
+                .detail("remove", removeNum);
+            }
         }
         // TraceEvent("LRU Out Remove", UID());
-        if(removeNum>100) {
-            TraceEvent("LRU Size Remove", UID()).detail("Num", cachePool->size())
-            .detail("size", cache->getStorageBytes().toString())
-            .detail("remove", removeNum);
-        }
-        if(cachePool->size()%1000==0) TraceEvent("LRU Size", UID()).detail("Num", cachePool->size())
-        .detail("size", cache->getStorageBytes().toString());
-        if(keyValue.key.startsWith("\x00"_sr)) {
+
+        if(cachePool != nullptr && cachePool->size()%1000==0) TraceEvent("LRU Size", UID()).detail("Num", cachePool->size()).detail("size", cache->getStorageBytes().toString());
+        if(cachePool != nullptr && keyValue.key.startsWith(this->extraType.storagePrefix)) {
             cacheStatus.insertByte += keyValue.expectedSize();
             cacheStatus.insertKey++;
             cacheStatus.keyNum++;
@@ -485,9 +488,9 @@ public:
         // TraceEvent("After Set", UID());
     }
 	void clear(KeyRangeRef range, const Arena* arena = nullptr) override{
-        if(range.singleKeyRange()) {
+        if(range.singleKeyRange() && cachePool != nullptr) {
             cachePool->remove(range.begin);
-            if(range.begin.startsWith("\x00"_sr)) {
+            if(range.begin.startsWith(this->extraType.storagePrefix)) {
                 ++cacheStatus.deleteKey;
                 --cacheStatus.keyNum;
             }
@@ -500,7 +503,7 @@ public:
     }; // returns when prior sets and clears are (atomically) durable
 
 	Future<Optional<Value>> readValue(KeyRef key, Optional<ReadOptions> options = Optional<ReadOptions>()) override{
-        if(key.startsWith("\x00"_sr)) {
+        if(key.startsWith(this->extraType.storagePrefix) && cachePool != nullptr) {
             bool flag = cachePool->update(key);
             ++cacheStatus.readKey;
             if(flag == 0) {
@@ -516,7 +519,7 @@ public:
 	Future<Optional<Value>> readValuePrefix(KeyRef key,
 	                                                int maxLength,
 	                                                Optional<ReadOptions> options = Optional<ReadOptions>()) override{
-        if(key.startsWith("\x00"_sr)) {
+        if(key.startsWith(this->extraType.storagePrefix) && cachePool != nullptr) {
             bool flag = cachePool->update(key);
             if(flag == 0) ++cacheStatus.missKey;
             else ++cacheStatus.hitKey;
@@ -676,10 +679,11 @@ KeyValueStoreCache::KeyValueStoreCache (KeyValueStoreType storeType,
         TraceEvent("CAMP");
         cachePool = (Cache<Key>*)(new C_CAMP());
         
-    } else{
+    } else if(cachePolicy == CachePolicy::LRU){
         TraceEvent("LRU");
         cachePool = (Cache<Key>*)(new LRUCache<Key>());
-        
+    } else {
+        cachePool = nullptr;
     }
     
     this->logID = logID;
