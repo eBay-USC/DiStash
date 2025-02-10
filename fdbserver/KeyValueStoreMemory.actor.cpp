@@ -416,8 +416,12 @@ private:
 		IDiskQueue::location log_location = 0;
 
 		for (auto o = ops.begin(); o != ops.end(); ++o) {
-			++count;
-			total += o->p1.size() + o->p2.size() + OP_DISK_OVERHEAD;
+			if(this->isCache() && this->extraType.is_log == false &&o->p1.startsWith(this->extraType.storagePrefix)) {
+				;
+			} else {
+				++count;
+				total += o->p1.size() + o->p2.size() + OP_DISK_OVERHEAD;
+			}
 			if (o->op == OpSet) {
 				if (sequential) {
 					KeyValueMapPair pair(o->p1, o->p2);
@@ -440,8 +444,9 @@ private:
 			} else
 				ASSERT(false);
 			if(log) {
-				if(this->isCache() && o->p1.startsWith(this->extraType.storagePrefix)) {
+				if(this->isCache() && this->extraType.is_log == false &&o->p1.startsWith(this->extraType.storagePrefix)) {
 					// TraceEvent("skiplog").detail("keyy", o->p1).detail("prefix", extraType.storagePrefix);
+					continue;
 				}
 				else {
 					// TraceEvent("notskiplog").detail("keyy", o->p1).detail("prefix", extraType.storagePrefix);
@@ -854,6 +859,12 @@ private:
 		int64_t snapshotSize = 0;
 		for (auto kv = snapshotData.begin(); kv != snapshotData.end(); ++kv) {
 			StringRef tempKey = kv.getKey(reserved_buffer);
+			if(this->isCache() && this->extraType.is_log == false &&tempKey.startsWith(this->extraType.storagePrefix)) {
+					// TraceEvent("skiplog_snapshot").detail("keyy", tempKey).detail("prefix", extraType.storagePrefix);
+					continue;
+			} else {
+				// TraceEvent("noskiplog_snapshot").detail("keyy", tempKey).detail("prefix", extraType.storagePrefix);
+			}
 			log_op(OpSnapshotItem, tempKey, kv.getValue());
 			snapshotSize += tempKey.size() + kv.getValue().size() + OP_DISK_OVERHEAD;
 			++count;
@@ -882,6 +893,7 @@ private:
 		// bytes once.
 		state Key lastSnapshotKeyA = makeString(CLIENT_KNOBS->SYSTEM_KEY_SIZE_LIMIT);
 		state Key lastSnapshotKeyB = makeString(CLIENT_KNOBS->SYSTEM_KEY_SIZE_LIMIT);
+		state Key lastSnapshotKeyTMP = makeString(CLIENT_KNOBS->SYSTEM_KEY_SIZE_LIMIT);
 		state bool lastSnapshotKeyUsingA = true;
 
 		TraceEvent("KVSMemStartingSnapshot", self->id).detail("StartKey", nextKey);
@@ -953,6 +965,17 @@ private:
 
 				} else {
 					// destKey is whichever of the two last key buffers we should write to next.
+					KeyRef nxtKey = next.getKey(mutateString(lastSnapshotKeyTMP));
+					if(self->isCache() && self->extraType.is_log == false && nxtKey.startsWith(self->extraType.storagePrefix)) {
+						++next;
+						snapItems++;
+						uint64_t opBytes = nxtKey.size() + next.getValue().size() + OP_DISK_OVERHEAD;
+						snapshotBytes += opBytes;
+						snapshotTotalWrittenBytes += opBytes;
+						continue;
+					}
+					
+
 					Key& destKey = lastSnapshotKeyUsingA ? lastSnapshotKeyA : lastSnapshotKeyB;
 
 					// Get the key, using destKey as a temporary buffer if needed.
