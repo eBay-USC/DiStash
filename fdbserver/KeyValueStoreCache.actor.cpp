@@ -465,7 +465,7 @@ public:
             cacheStatus.keyNum--;
             cacheStatus.evictionNum++;
             
-            cache->commit();
+            cache->commit_evict();
             cacheStatus.evictionByte+= cache->getStorageBytes().available-tmp;
             if(removeNum%100==0) {
                 TraceEvent("LRU Size Remove", UID()).detail("Num", cachePool->size())

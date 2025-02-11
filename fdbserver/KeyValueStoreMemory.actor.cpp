@@ -103,6 +103,11 @@ public:
 		                    std::max((int64_t)0, availableSize));
 	}
 
+	void commit_evict() override{
+		int64_t bytesWritten = commit_queue(queue, true);
+		committedWriteBytes += bytesWritten;;
+	}
+
 	void semiCommit() {
 		transactionSize += queue.totalSize();
 		if (transactionSize > 0.5 * committedDataSize) {
@@ -968,10 +973,10 @@ private:
 					KeyRef nxtKey = next.getKey(mutateString(lastSnapshotKeyTMP));
 					if(self->isCache() && self->extraType.is_log == false && nxtKey.startsWith(self->extraType.storagePrefix)) {
 						++next;
-						snapItems++;
-						uint64_t opBytes = nxtKey.size() + next.getValue().size() + OP_DISK_OVERHEAD;
-						snapshotBytes += opBytes;
-						snapshotTotalWrittenBytes += opBytes;
+						// snapItems++;
+						// uint64_t opBytes = nxtKey.size() + next.getValue().size() + OP_DISK_OVERHEAD;
+						// snapshotBytes += opBytes;
+						// snapshotTotalWrittenBytes += opBytes;
 						continue;
 					}
 					

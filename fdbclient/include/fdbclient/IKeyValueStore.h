@@ -56,6 +56,8 @@ public:
 	virtual Future<Void> commit(
 	    bool sequential = false) = 0; // returns when prior sets and clears are (atomically) durable
 
+	virtual void commit_evict() {};
+
 	virtual Future<Optional<Value>> readValue(KeyRef key, Optional<ReadOptions> options = Optional<ReadOptions>()) = 0;
 
 	// Like readValue(), but returns only the first maxLength bytes of the value if it is longer
