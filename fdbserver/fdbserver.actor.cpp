@@ -1562,7 +1562,7 @@ private:
 					cacheType = KeyValueStoreType(KeyValueStoreType::Cache);
 					//
 				} else if(argStr == "ssd") {
-					cacheType = KeyValueStoreType(KeyValueStoreType::SSD_BTREE_V2);
+					cacheType = KeyValueStoreType(KeyValueStoreType::SSD_CACHE);
 				}
 				else{
 					fprintf(stderr, "ERROR: memoryType not implmemented \n");
@@ -2234,7 +2234,7 @@ int main(int argc, char* argv[]) {
 		}
 		char * StoreTypeStrings[]={ "SSD_BTREE_V1", "MEMORY", "SSD_BTREE_V2",
 									"SSD_REDWOOD_V1","MEMORY_RADIXTREE","SSD_ROCKSDB_V1",
-									"SSD_SHARDED_ROCKSDB","NONE","Memcached","Vedis","Cache", "Hybrid"
+									"SSD_SHARDED_ROCKSDB","NONE","Memcached","Vedis","Cache", "Hybrid", "SSD_CACHE"
 									};
 		char * CachePolicyStrings[] = { "NONE", "LRU","CAMP"};
 

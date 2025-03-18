@@ -700,6 +700,12 @@ KeyValueStoreCache::KeyValueStoreCache (KeyValueStoreType storeType,
             TraceEvent("Filename").detail("filename", filename);
 		    this->cache = keyValueStoreMemory(filename, logID, memoryLimit);
             break;
+        case KeyValueStoreType::SSD_BTREE_V1:
+            this->cache = keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V1, false, false);
+            break;
+        case KeyValueStoreType::SSD_BTREE_V2:
+            this->cache = keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, false, false);
+            break; 
     }
 }
 

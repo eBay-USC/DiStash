@@ -74,6 +74,16 @@ IKeyValueStore* openKVStore(KeyValueStoreType storeType,
 			case KeyValueStoreType::MEMORY:
 				cur = keyValueStoreMemory(cachename, logID, memoryLimit);
 				break;
+			case KeyValueStoreType::SSD_BTREE_V1:
+				cur = keyValueStoreCache(KeyValueStoreType::SSD_BTREE_V1, cachename, logID, memoryLimit, cachePolicy);
+				break;
+				// cur = keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V1, false, checkIntegrity);
+				// break;
+			case KeyValueStoreType::SSD_CACHE:
+				cur = keyValueStoreCache(KeyValueStoreType::SSD_BTREE_V2, cachename, logID, memoryLimit, cachePolicy);
+				break;
+				// cur keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, checkChecksums, checkIntegrity);
+				// break;
 		}
 		if(cur != nullptr) {
 			extraType.storagePrefix = "\x01"_sr;

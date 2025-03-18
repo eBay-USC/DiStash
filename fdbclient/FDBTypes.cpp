@@ -236,6 +236,8 @@ std::string KeyValueStoreType::getStoreTypeStr(const StoreType& storeType) {
 		return "hybrid";
 	case Cache:
 		return "cache";
+	case SSD_CACHE:
+		return "ssd-cache";
 	default:
 		return "unknown";
 	}
@@ -255,6 +257,7 @@ KeyValueStoreType KeyValueStoreType::fromString(const std::string& str) {
 													  { "memcached", Memcached},
 													  { "cache", Cache},
 													  { "hybrid", HYBRID},
+													  { "ssd-cache", SSD_CACHE},
 		                                              { "none", NONE } };
 	auto it = names.find(str);
 	if (it == names.end()) {

@@ -377,6 +377,8 @@ std::string filenameFromSample(KeyValueStoreType storeType, std::string folder, 
 		return joinPath(folder, sample_filename);
 	else if (storeType == KeyValueStoreType::SSD_SHARDED_ROCKSDB)
 		return joinPath(folder, sample_filename);
+	else if(storeType == KeyValueStoreType::SSD_CACHE) 
+		return joinPath(folder, sample_filename);
 	UNREACHABLE();
 }
 
@@ -394,6 +396,8 @@ std::string filenameFromId(KeyValueStoreType storeType, std::string folder, std:
 		return joinPath(folder, prefix + id.toString() + ".rocksdb");
 	else if (storeType == KeyValueStoreType::SSD_SHARDED_ROCKSDB)
 		return joinPath(folder, prefix + id.toString() + ".shardedrocksdb");
+	else if (storeType == KeyValueStoreType::SSD_CACHE)
+		return joinPath(folder, prefix + id.toString() + "_cache_.sqlite");
 
 	TraceEvent(SevError, "UnknownStoreType").detail("StoreType", storeType.toString());
 	UNREACHABLE();
@@ -517,7 +521,8 @@ std::vector<DiskStore> getDiskStores(std::string folder,
 
 	for (int idx = 0; idx < files.size(); idx++) {
 		if(files[idx].find("_cache_") != std::string::npos) {
-			if(type != KeyValueStoreType::Cache) {
+			// if(type == KeyValueStoreType::Cache)
+			if(type !=  KeyValueStoreType::Cache && type != KeyValueStoreType::SSD_CACHE) {
 				continue;
 			}
 			DiskStore store;
@@ -530,10 +535,11 @@ std::vector<DiskStore> getDiskStores(std::string folder,
 			}
 			store.storeID = UID::fromString(files[idx].substr(prefix.size(), 32));
 			store.filename = filenameFromSample(type, folder, files[idx]);
-			// fprintf(stderr, "filename_find: %s\n", store.filename.c_str());
+			fprintf(stderr, "filename_find: %s\n", store.filename.c_str());
+			fprintf(stderr, "type: %s\n", store.filename.c_str());
 			result.push_back(store);
 		}
-		if(type == KeyValueStoreType::Cache) continue;
+		if(type == KeyValueStoreType::Cache || type == KeyValueStoreType::SSD_CACHE) continue;
 		DiskStore store;
 		store.storeType = type;
 
@@ -596,6 +602,8 @@ std::vector<DiskStore> getDiskStores(std::string folder) {
 	result.insert(result.end(), result6.begin(), result6.end());
 	auto result7 = getDiskStores(folder, "_0.fdq", KeyValueStoreType::Cache, bTreeV2Suffix.check);
 	result.insert(result.end(), result7.begin(), result7.end());
+	auto result8 = getDiskStores(folder, bTreeV2Suffix.suffix, KeyValueStoreType::SSD_CACHE, bTreeV2Suffix.check);
+	result.insert(result.end(), result8.begin(), result8.end());
 	return result;
 }
 

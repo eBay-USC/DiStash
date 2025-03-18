@@ -293,6 +293,9 @@ std::map<std::string, std::string> configForToken(std::string const& mode) {
 	} else if(mode == "cache") {
 		logType = KeyValueStoreType::Cache;
 		storeType = KeyValueStoreType::Cache;
+	} else if(mode =="ssd-cache") {
+		logType = KeyValueStoreType::SSD_CACHE;
+		storeType = KeyValueStoreType::SSD_CACHE;
 	}
 	// Add any new store types to fdbserver/workloads/ConfigureDatabase, too
 

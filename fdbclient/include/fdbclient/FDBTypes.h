@@ -1006,6 +1006,7 @@ struct KeyValueStoreType {
 		Vedis = 9,
 		Cache = 10,
 		HYBRID = 11,
+		SSD_CACHE = 12,
 		END
 	};
 
