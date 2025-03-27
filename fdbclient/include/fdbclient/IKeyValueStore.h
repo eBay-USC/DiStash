@@ -72,6 +72,9 @@ public:
 	                                      int byteLimit = 1 << 30,
 	                                      Optional<ReadOptions> options = Optional<ReadOptions>()) = 0;
 
+	virtual RangeResult readContent() {return RangeResult();}
+	virtual Future<int> recover_finish() {return 1;}
+
 	// Shard management APIs.
 	// Adds key range to a physical shard.
 	virtual Future<Void> addRange(KeyRangeRef range, std::string id, bool active = true) { return Void(); }

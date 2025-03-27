@@ -238,6 +238,22 @@ public:
 		}
 	}
 
+	RangeResult readContent() override{
+		RangeResult result;
+		auto it = data.lower_bound("\x00"_sr);
+		if(it != data.end()) {
+			StringRef tempKey = it.getKey(reserved_buffer);
+			result.push_back_deep(result.arena(), KeyValueRef(tempKey, it.getValue()));
+		}
+		
+		return result;
+	}
+
+	Promise<int>  recover_finish_p;
+	Future<int> recover_finish() {
+		return recover_finish_p.getFuture();
+	}
+
 	// If rowLimit>=0, reads first rows sorted ascending, otherwise reads last rows sorted descending
 	// The total size of the returned value (less the last entry) will be less than byteLimit
 	Future<RangeResult> readRange(KeyRangeRef keys,
@@ -799,6 +815,8 @@ private:
 						loggingDelay = delay(1.0);
 					}
 
+					self->recover_finish_p.send(1);
+
 					wait(yield());
 				}
 
@@ -1113,7 +1131,7 @@ KeyValueStoreMemory<Container>::KeyValueStoreMemory(IDiskQueue* log,
   : type(storeType), id(id), log(log), db(db), committedWriteBytes(0), overheadWriteBytes(0), currentSnapshotEnd(-1),
     previousSnapshotEnd(-1), committedDataSize(0), transactionSize(0), transactionIsLarge(false), resetSnapshot(false),
     disableSnapshot(disableSnapshot), replaceContent(replaceContent), firstCommitWithSnapshot(true), snapshotCount(0),
-    memoryLimit(memoryLimit), enableEncryption(enableEncryption) {
+    memoryLimit(memoryLimit), enableEncryption(enableEncryption), recover_finish_p() {
 	// create reserved buffer for radixtree store type
 	this->reserved_buffer =
 	    (storeType == KeyValueStoreType::MEMORY) ? nullptr : new uint8_t[CLIENT_KNOBS->SYSTEM_KEY_SIZE_LIMIT];

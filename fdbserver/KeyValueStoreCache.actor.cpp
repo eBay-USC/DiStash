@@ -419,9 +419,47 @@ public:
 
 class KeyValueStoreCache final : public IKeyValueStore {
 public:
+    ACTOR static Future<Void> CheckRange(KeyValueStoreCache* cache, std::string filename, UID logID) {
+        TraceEvent("ReadCacheRangeSize0");
+        // RangeResult resultt = wait(cache->cache->readRange(KeyRangeRef("\x00"_sr, "\xff"_sr), 1));
+        // Optional<Value> result = wait(cache->cache->readValue("\x00"_sr));
+        state std::tuple<size_t, size_t, size_t> result = cache->cache->getSize();
+
+        TraceEvent("ReadCacheRangeSize1").detail("resultsize0", std::get<0>(result))
+        .detail("resultsize1", std::get<1>(result)).detail("resultsize2", std::get<2>(result));
+
+        state StorageBytes  result2 = cache->cache->getStorageBytes();
+        TraceEvent("ReadCacheRangeSize2").detail("resultsize0", result2.toString());
+
+        int x = wait(cache->cache->recover_finish());
+        RangeResult  result3 = cache->cache->readContent();
+        TraceEvent("ReadCacheRangeSize3").detail("resultsize0", result3.size());
+        // if(result3.size()) TraceEvent("ReadCacheRangeSize3").detail("resultsize0", result3.size()).detail("resultsize1", result3.begin()->key.toString());
+        // else  TraceEvent("ReadCacheRangeSize3").detail("resultsize0", result3.size());
+
+        // RangeResult resultt = wait(cache->cache->readRange(KeyRangeRef("\x00"_sr, "\xff"_sr), 1));
+        //  TraceEvent("ReadCacheRangeSize2").detail("resultsize4", resultt.size());
+
+        // if(std::get<0>(result) == 0 && std::get<1>(result) == 0 && std::get<2>(result) == 0) {
+            // cache->cache->dispose();
+            // cache->cache = keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, false, false);
+        // }
+        
+        // if(resultt.size() == 0) {
+        //     cache->rangeFlag = -1;
+        // } else cache->rangeFlag = 1;
+
+        // if(cache->rangeFlag == -1) {
+        //     cache->cache->dispose();
+        //     cache->cache = keyValueStoreSQLite(filename + "_new", logID, KeyValueStoreType::SSD_BTREE_V2, false, false);
+        // }
+        return Void();
+    }
+
     void setExtraType(ExtraType extraType) override {
         cache->setExtraType(extraType);
         this->isCache_ = true;
+        this->extraType =  extraType;
     }
     Future<Void> getError() const override{
         return cache->getError();
@@ -653,8 +691,9 @@ public:
     KeyValueStoreCache(IKeyValueStore *cache);
 
     UID logID;
-private:
     IKeyValueStore *cache;
+    int rangeFlag = 0;
+private:
     Cache<Key> *cachePool;
     CacheStatus cacheStatus;
     CachePolicy cachePolicy;
@@ -706,6 +745,20 @@ KeyValueStoreCache::KeyValueStoreCache (KeyValueStoreType storeType,
         case KeyValueStoreType::SSD_BTREE_V2:
             this->cache = keyValueStoreSQLite(filename, logID, KeyValueStoreType::SSD_BTREE_V2, false, false);
             break; 
+    }
+    if(storeType == KeyValueStoreType::MEMORY) {
+        CheckRange(this, filename, logID);
+        TraceEvent("Rangeflag");
+        int a = 0;
+        // while(rangeFlag == 0) {
+        //     a++;
+        //     sleep(1);
+        // };
+        // TraceEvent("Rangeflag").detail("fkag", rangeFlag).detail("a",a);
+        // if(rangeFlag == -1) {
+        //     this->cache->dispose();
+        //     this->cache = keyValueStoreSQLite(filename + "_new", logID, KeyValueStoreType::SSD_BTREE_V2, false, false);
+        // }
     }
 }
 
