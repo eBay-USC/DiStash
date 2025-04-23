@@ -1,4 +1,28 @@
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
+if(OpenSSL_FOUND)
+    message(STATUS "CMake Found OpenSSL:")
+    message(STATUS "  Version: ${OpenSSL_VERSION}")
+    message(STATUS "  Include Dir: ${OpenSSL_INCLUDE_DIR}")
+    # 现代 CMake 通过 Targets 传递信息，下面的变量可能为空
+    message(STATUS "  Libraries (legacy): ${OpenSSL_LIBRARIES}")
+    message(STATUS "  SSL Library (legacy): ${OpenSSL_SSL_LIBRARY}")
+    message(STATUS "  Crypto Library (legacy): ${OpenSSL_Crypto_LIBRARY}")
+    # 检查关键的 IMPORTED 目标是否存在
+    if(TARGET OpenSSL::SSL)
+        message(STATUS "  Target OpenSSL::SSL exists.")
+    else()
+        message(WARNING "  Target OpenSSL::SSL does NOT exist after find_package!")
+    endif()
+    if(TARGET OpenSSL::Crypto)
+        message(STATUS "  Target OpenSSL::Crypto exists.")
+    else()
+        message(WARNING "  Target OpenSSL::Crypto does NOT exist after find_package!")
+    endif()
+else()
+    # 如果使用了 REQUIRED，理论上不会执行到这里，但以防万一
+    message(FATAL_ERROR "OpenSSL was REQUIRED but CMake reports NOT FOUND immediately after find_package!")
+endif()
 
 option(FLOW_USE_ZSTD "Enable zstd compression in flow" OFF)
 
