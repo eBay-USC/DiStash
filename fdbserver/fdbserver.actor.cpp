@@ -1881,19 +1881,27 @@ private:
 				fprintf(stderr, "ERROR: Configuration file must contain a JSON object\n");
 			}
 			StatusObject configJSON = config.get_obj();
-			std::vector<std::pair<std::string, std::string>> configss;
+			std::vector<std::tuple<std::string, std::string, int>> configss;
 			for(auto i:configJSON) {
-				std::pair<std::string, std::string> cur;
-				cur.first = i.second.get_str();
-				cur.second = i.first;
+				json_spirit::mValue cur_config = i.second;
+				std::tuple<std::string, std::string, int> cur;
+				for(auto j:cur_config.get_array()) {
+					if(j.type() == json_spirit::str_type) std::get<0>(cur) = j.get_str();
+					if(j.type() == json_spirit::int_type) std::get<2>(cur) = j.get_int();
+				}
+				// cur.second = i.first;
+				std::get<1>(cur) = i.first;
 				configss.push_back(cur);
 			}
 			std::sort(configss.begin(), configss.end());
 			for(auto i:configss) {
-				KeyValueStoreType type(KeyValueStoreType::fromString(i.second));
-				KeyRef prefix = KeyRef(i.first);
+				KeyValueStoreType type(KeyValueStoreType::fromString(std::get<1>(i)));
+				KeyRef prefix = KeyRef(std::get<0>(i));
+				int replica = std::get<2>(i);
+				fprintf(stderr, "Storage Type: %s Prefix: %s Replica: %d\n", type.toString().c_str(), prefix.toHexString().c_str(), replica);
 				storageTypeCollections.types.push_back(storageTypeCollections.arena, type);
 				storageTypeCollections.prefixes.push_back_deep(storageTypeCollections.arena, prefix);
+				storageTypeCollections.replicas.push_back(storageTypeCollections.arena, replica);
 			}
 		}
 

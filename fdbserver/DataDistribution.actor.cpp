@@ -709,6 +709,14 @@ public:
 				auto it = self->initData->userRangeConfig->rangeContaining(keys.begin);
 				int customReplicas =
 				    std::max(self->configuration.storageTeamSize, it->value().replicationFactor.orDefault(0));
+				for(int kk = 0; kk<self->storageTypeCollections.prefixes.size();kk++) {
+					if(keys.begin.startsWith(self->storageTypeCollections.prefixes[kk])) {
+						customReplicas = std::max(customReplicas, self->storageTypeCollections.replicas[kk]);
+						TraceEvent("DDInitCustomRangeConfig", self->ddId)
+						    .detail("Range", KeyRangeRef(keys.begin, keys.end))
+						    .detail("Config", customReplicas);
+					}
+				}
 				ASSERT_WE_THINK(KeyRangeRef(it->range().begin, it->range().end).contains(keys));
 
 				bool unhealthy = iShard.primarySrc.size() != customReplicas;
@@ -999,14 +1007,14 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			
 			// tcis.push_back(TeamCollectionInterface());
 			for(int i=0;i<prefix_size;i++) zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
-			int replicaSize = self->configuration.storageTeamSize;
+			// int replicaSize = self->configuration.storageTeamSize;
 
 			std::vector<Future<Void>> actors; // the container of ACTORs
 			actors.push_back(onConfigChange);
 
 			if (self->configuration.usableRegions > 1) {
 				// tcis.push_back(TeamCollectionInterface());
-				replicaSize = 2 * self->configuration.storageTeamSize;
+				// replicaSize = 2 * self->configuration.storageTeamSize;
 
 				for(int i=0;i<prefix_size;i++) zeroHealthyTeams.push_back(makeReference<AsyncVar<bool>>(true));
 
@@ -1044,16 +1052,22 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 			
 			
 			for(int i=0;i<prefix_size;i++) {
+				state DatabaseConfiguration new_conf = self->configuration;
+				// new_conf.storageTeamSize = storageTypeCollections.replicas[i];
+				TraceEvent("DDTeamCollection", self->ddId)
+				    .detail("Prefix", storageTypeCollections.prefixes[i].toString())
+				    .detail("StorageType", storageTypeCollections.types[i].toString())
+					.detail("Replicas", storageTypeCollections.replicas[i]);
 				
 				state PromiseStream<Promise<int>> getUnhealthyRelocationCount;
 				std::vector<TeamCollectionInterface> tcis; // primary and remote region interface
 				tcis.push_back(TeamCollectionInterface());
 				state Reference<AsyncVar<bool>> processingUnhealthy(new AsyncVar<bool>(false));
 				state Reference<AsyncVar<bool>> processingWiggle(new AsyncVar<bool>(false));
-				int replicaSize = self->configuration.storageTeamSize;
+				int replicaSize = new_conf.storageTeamSize;
 				if (self->configuration.usableRegions > 1) {
 					tcis.push_back(TeamCollectionInterface());
-					replicaSize = 2 * self->configuration.storageTeamSize;
+					replicaSize = 2 * new_conf.storageTeamSize;
 
 				}
 				auto ddQueue = makeReference<DDQueue>(
@@ -1065,7 +1079,7 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 									.physicalShardCollection = self->physicalShardCollection,
 									.getAverageShardBytes = getAverageShardBytes,
 									.teamSize = replicaSize,
-									.singleRegionTeamSize = self->configuration.storageTeamSize,
+									.singleRegionTeamSize = new_conf.storageTeamSize,
 									.relocationProducer = self->relocationProducer,
 									.relocationConsumer = self->relocationConsumer[i].getFuture(),
 									.getShardMetrics = getShardMetrics,
@@ -1106,7 +1120,7 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 					self->lock,
 					self->relocationProducer,
 					self->shardsAffectedByTeamFailure,
-					self->configuration,
+					new_conf,
 					self->primaryDcId,
 					self->configuration.usableRegions > 1 ? self->remoteDcIds : std::vector<Optional<Key>>(),
 					self->initialized.getFuture(),
@@ -1118,7 +1132,8 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 					removeFailedServer,
 					getUnhealthyRelocationCount,
 					getAverageShardBytes,
-					triggerStorageQueueRebalance }));
+					triggerStorageQueueRebalance,
+					self->storageTypeCollections}));
 				teamCollectionsPtrs.push_back(primaryTeamCollection[i].getPtr());
 				auto recruitStorage = IAsyncListener<RequestStream<RecruitStorageRequest>>::create(
 					self->dbInfo, [](auto const& info) { return info.clusterInterface.recruitStorage; });
@@ -1131,7 +1146,7 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 													self->lock,
 													self->relocationProducer,
 													self->shardsAffectedByTeamFailure,
-													self->configuration,
+													new_conf,
 													self->remoteDcIds,
 													Optional<std::vector<Optional<Key>>>(),
 													self->initialized.getFuture() && remoteRecovered(self->dbInfo),
@@ -1143,7 +1158,8 @@ ACTOR Future<Void> dataDistribution(Reference<DataDistributor> self,
 													removeFailedServer,
 													getUnhealthyRelocationCount,
 													getAverageShardBytes,
-													triggerStorageQueueRebalance }));
+													triggerStorageQueueRebalance,
+													self->storageTypeCollections }));
 					teamCollectionsPtrs.push_back(remoteTeamCollection[i].getPtr());
 					remoteTeamCollection[i]->teamCollections = teamCollectionsPtrs;
 					actors.push_back(reportErrorsExcept(DDTeamCollection::run(remoteTeamCollection[i],

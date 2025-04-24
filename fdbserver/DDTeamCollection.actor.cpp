@@ -379,6 +379,14 @@ public:
 				for (auto it : self->userRangeConfig->intersectingRanges(req.keys->begin, req.keys->end)) {
 					customReplicas = std::max(customReplicas, it->value().replicationFactor.orDefault(0));
 				}
+				for(int kk = 0; kk<self->storageTypeCollections.prefixes.size();kk++) {
+					if(req.keys->begin.startsWith(self->storageTypeCollections.prefixes[kk])) {
+						customReplicas = std::max(customReplicas, self->storageTypeCollections.replicas[kk]);
+						// TraceEvent("DDTCInitCustomRangeConfig0", self->ddId)
+						    // .detail("Range", KeyRangeRef(keys.begin, keys.end))
+						    // .detail("Config", customReplicas);
+					}
+				}
 				if (customReplicas > self->configuration.storageTeamSize) {
 					auto newTeam = self->buildLargeTeam(customReplicas);
 					auto& firstFailureTime = self->firstLargeTeamFailure[customReplicas];
@@ -4136,6 +4144,14 @@ void DDTeamCollection::fixUnderReplication() {
 			for (auto it : userRangeConfig->intersectingRanges(r.range().begin, r.range().end)) {
 				customReplicas = std::max(customReplicas, it->value().replicationFactor.orDefault(0));
 			}
+			for(int kk = 0; kk<this->storageTypeCollections.prefixes.size();kk++) {
+				if(r.range().begin.startsWith(this->storageTypeCollections.prefixes[kk])) {
+					customReplicas = std::max(customReplicas, this->storageTypeCollections.replicas[kk]);
+					// TraceEvent("DDTCInitCustomRangeConfig")
+						// .detail("Range", KeyRangeRef(keys.begin, keys.end))
+						// .detail("Config", customReplicas);
+				}
+			}
 
 			int currentSize = 0;
 			for (auto& c : teams.first) {
@@ -4280,7 +4296,7 @@ bool DDTeamCollection::satisfiesPolicy(const std::vector<Reference<TCServerInfo>
 }
 
 DDTeamCollection::DDTeamCollection(DDTeamCollectionInitParams const& params)
-  : db(params.db), doBuildTeams(true), lastBuildTeamsFailed(false), teamBuilder(Void()), lock(params.lock),
+  : storageTypeCollections(params.storageTypeCollections), db(params.db), doBuildTeams(true), lastBuildTeamsFailed(false), teamBuilder(Void()), lock(params.lock),
     output(params.output), unhealthyServers(0), storageWiggler(makeReference<StorageWiggler>(this)),
     processingWiggle(params.processingWiggle), shardsAffectedByTeamFailure(params.shardsAffectedByTeamFailure),
     initialFailureReactionDelay(
@@ -6152,7 +6168,8 @@ public:
 		                                                     Promise<UID>(),
 		                                                     PromiseStream<Promise<int>>(),
 		                                                     PromiseStream<Promise<int64_t>>(),
-		                                                     PromiseStream<RebalanceStorageQueueRequest>() }));
+		                                                     PromiseStream<RebalanceStorageQueueRequest>(),
+															 StorageTypeCollections()}));
 
 		for (int id = 1; id <= processCount; ++id) {
 			UID uid(id, 0);
@@ -6206,7 +6223,8 @@ public:
 		                                                     Promise<UID>(),
 		                                                     PromiseStream<Promise<int>>(),
 		                                                     PromiseStream<Promise<int64_t>>(),
-		                                                     PromiseStream<RebalanceStorageQueueRequest>() }));
+		                                                     PromiseStream<RebalanceStorageQueueRequest>(),
+															 StorageTypeCollections()}));
 
 		for (int id = 1; id <= processCount; id++) {
 			UID uid(id, 0);

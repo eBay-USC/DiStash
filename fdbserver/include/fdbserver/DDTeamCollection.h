@@ -200,6 +200,7 @@ struct DDTeamCollectionInitParams {
 	PromiseStream<Promise<int>> getUnhealthyRelocationCount;
 	PromiseStream<Promise<int64_t>> getAverageShardBytes;
 	PromiseStream<RebalanceStorageQueueRequest> triggerStorageQueueRebalance;
+	StorageTypeCollections storageTypeCollections;
 };
 
 class DDTeamCollection : public ReferenceCounted<DDTeamCollection> {
@@ -671,6 +672,8 @@ protected:
 	void updateTeamEligibility();
 
 public:
+
+	StorageTypeCollections storageTypeCollections;
 	Reference<IDDTxnProcessor> db;
 
 	DatabaseConfiguration configuration;

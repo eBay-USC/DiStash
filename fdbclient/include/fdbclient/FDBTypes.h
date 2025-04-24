@@ -1055,9 +1055,10 @@ struct StorageTypeCollections {
 	Arena arena;
 	VectorRef<KeyRef> prefixes;
 	VectorRef<KeyValueStoreType> types;
+	VectorRef<int> replicas;
 	template <typename Ar>
 	void serialize(Ar& ar) {
-		serializer(ar, prefixes, types, arena);
+		serializer(ar, prefixes, types, replicas, arena);
 	}
 };
 
