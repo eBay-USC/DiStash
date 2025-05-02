@@ -184,6 +184,8 @@ else()
   ExternalProject_add(toml11Project
     URL "https://github.com/ToruNiina/toml11/archive/v3.4.0.tar.gz"
     URL_HASH SHA256=bc6d733efd9216af8c119d8ac64a805578c79cc82b813e4d1d880ca128bd154d
+    CMAKE_ARGS
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     CMAKE_CACHE_ARGS
       -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
       -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
