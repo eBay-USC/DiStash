@@ -34,17 +34,17 @@ The official docker image for building is [`foundationdb/build`](https://hub.doc
 
 To build outside the official docker image you'll need at least these dependencies:
 
-1. Install cmake Version 3.13 or higher [CMake](https://cmake.org/), on a MacBook Pro: brew install cmake
+1. Install cmake Version 3.13 or higher [CMake](https://cmake.org/), on a MacBook Pro: `brew install cmake`
 1. Install [Mono](https://www.mono-project.com/download/stable/), on a MacBook Pro: download pkg file and install
-1. Install [Ninja](https://ninja-build.org/) (optional, but recommended), on a MacBook Pro: brew install ninja
+1. Install [Ninja](https://ninja-build.org/) (optional, but recommended), on a MacBook Pro: `brew install ninja`
 
 We also recomment installing:
 
-1. openssl, on a MacBook Pro: brew install openssl
-1. lz4, on a Macbook Pro: brew install lz4
-1. sphinx-doc, on a Macbook Pro: brew install sphinx-doc
-1. jinja2-cli, on a Macbook Pro: brew install jinja2-cli
-1. pip install jinja2
+1. openssl, on a MacBook Pro: `brew install openssl`
+1. lz4, on a Macbook Pro: `brew install lz4`
+1. sphinx-doc, on a Macbook Pro: `brew install sphinx-doc`
+1. jinja2-cli, on a Macbook Pro: `brew install jinja2-cli`
+1. `pip install jinja2`
 
 If compiling for local development, please set `-DUSE_WERROR=ON` in
 cmake. Our CI compiles with `-Werror` on, so this way you'll find out about
