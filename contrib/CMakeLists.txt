@@ -4,6 +4,11 @@ target_include_directories(rapidjson INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/rapid
 find_package(fmt 8.1.1 GLOBAL)
 if(NOT fmt_FOUND)
   add_subdirectory(fmt-8.1.1)
+  set_target_properties(fmt PROPERTIES
+      CXX_STANDARD 17
+      CXX_STANDARD_REQUIRED YES
+      CXX_EXTENSIONS NO
+  )
 endif()
 
 add_subdirectory(crc32)
