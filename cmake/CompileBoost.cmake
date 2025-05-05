@@ -34,7 +34,7 @@ function(compile_boost)
 
   # Configure b2 command
   set(B2_COMMAND "./b2")
-  set(BOOST_COMPILER_FLAGS -fvisibility=hidden -fPIC -std=c++17 -w)
+  set(BOOST_COMPILER_FLAGS -fvisibility=hidden -fPIC -std=c++17 -w -DBOOST_NO_CXX98_FUNCTION_BASE=1)
   set(BOOST_LINK_FLAGS "")
   if(APPLE OR ICX OR USE_LIBCXX)
     list(APPEND BOOST_COMPILER_FLAGS -stdlib=libc++ -nostdlib++)
