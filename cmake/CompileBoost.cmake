@@ -34,7 +34,7 @@ function(compile_boost)
 
   # Configure b2 command
   set(B2_COMMAND "./b2")
-  set(BOOST_COMPILER_FLAGS -fvisibility=hidden -fPIC -std=c++17 -w -DBOOST_NO_CXX98_FUNCTION_BASE=1)
+  set(BOOST_COMPILER_FLAGS -fvisibility=hidden -fPIC -std=c++17 -w -D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
   set(BOOST_LINK_FLAGS "")
   if(APPLE OR ICX OR USE_LIBCXX)
     list(APPEND BOOST_COMPILER_FLAGS -stdlib=libc++ -nostdlib++)
@@ -61,6 +61,7 @@ function(compile_boost)
   set(BOOST_INSTALL_DIR "${CMAKE_BINARY_DIR}/boost_install")
   ExternalProject_add("${COMPILE_BOOST_TARGET}Project"
     URL                "https://archives.boost.io/release/1.78.0/source/boost_1_78_0.tar.bz2"
+    # https://downloads.sourceforge.net/project/boost/boost/1.78.0/boost_1_78_0.tar.bz2
     URL_HASH           SHA256=8681f175d4bdb26c52222665793eef08490d7758529330f98d3b29dd0735bccc
     CONFIGURE_COMMAND  ${BOOTSTRAP_COMMAND}
                        ${BOOTSTRAP_ARGS}
