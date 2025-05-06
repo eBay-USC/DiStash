@@ -17,7 +17,7 @@ fi
 /bin/launchctl load -w /Library/LaunchDaemons/com.foundationdb.fdbmonitor.plist
 
 if [ "$NEWDB" != "" ]; then
-    /usr/local/bin/fdbcli --exec "configure new single memory" --timeout 20
+    /usr/local/bin/fdbcli --exec "configure new single ssd" --timeout 20
 fi
 
 exit 0

@@ -11,6 +11,7 @@ restart-delay = 60
 # restart-backoff = 60
 # restart-delay-reset-interval = 60
 cluster-file = /usr/local/etc/foundationdb/fdb.cluster
+storage-type-file = /usr/local/etc/foundationdb/storagetype.json
 # kill-on-configuration-change = true
 
 ## Default parameters for individual fdbserver processes
@@ -25,15 +26,47 @@ logdir = /usr/local/foundationdb/logs
 # machine-id =
 # datacenter-id =
 # class = 
-# memory = 8GiB
-# storage-memory = 1GiB
-# cache-memory = 2GiB
+memory = 64GiB
+storage-memory = 4GiB
+cache-memory = 2GiB
 # metrics-cluster =
 # metrics-prefix =
 
 ## An individual fdbserver process with id 4689
 ## Parameters set here override defaults from the [fdbserver] section
 [fdbserver.4689]
+cache-type = cache
+machine-id = c1
+cache-is-log = True
+[fdbserver.4100]
+cache-type = cache
+machine-id = c2
+cache-is-log = True
+[fdbserver.4200]
+cache-type = cache
+machine-id = c3
+cache-is-log = True
+
+[fdbserver.6000]
+class = storage
+machine-id = s1
+[fdbserver.6100]
+class = storage
+machine-id = s2
+[fdbserver.6200]
+class = storage
+machine-id = s3
+[fdbserver.6300]
+class = storage
+machine-id = s4
+
+[fdbserver.7000]
+class = stateless
+machine-id = ss0
+
+[fdbserver.8000]
+class = transaction
+machine-id = tr0
 
 [backup_agent]
 command = /usr/local/foundationdb/backup_agent/backup_agent

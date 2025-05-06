@@ -61,6 +61,7 @@ mkdir -p -m 0700 $SERVERDIR/usr/local/foundationdb/data
 mkdir -p -m 0700 $SERVERDIR/usr/local/foundationdb/logs
 
 install -m 0664 "$SRCDIR"/packaging/osx/foundationdb.conf.new $SERVERDIR/usr/local/etc/foundationdb
+install -m 0664 "$SRCDIR"/packaging/osx/storagetype.json $SERVERDIR/usr/local/etc/foundationdb
 install -m 0755 "$BUILDDIR"/bin/fdbserver "$BUILDDIR"/bin/fdbmonitor $SERVERDIR/usr/local/libexec
 install -m 0644 "$SRCDIR"/packaging/osx/com.foundationdb.fdbmonitor.plist $SERVERDIR/Library/LaunchDaemons
 
