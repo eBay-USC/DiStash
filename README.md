@@ -173,6 +173,7 @@ export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
 export CPPFLAGS="-I/opt/homebrew/opt/llvm/include" 
 ```
 
+To generate a installable package,first compile:
 ```sh
 cmake -G Ninja \
       -DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang \
@@ -184,11 +185,7 @@ cmake -G Ninja \
 <PATH_TO_FOUNDATIONDB_SOURCE>
 ```
 
-To generate a installable package,first compile:
 
-```sh
-ninja
-```
 Now generate the package:
 ```sh
 $SRCDIR/packaging/osx/buildpkg.sh . $SRCDIR
