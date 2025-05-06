@@ -160,16 +160,37 @@ For RPM simply replace `DEB` with `RPM`.
 
 ### MacOS
 
-The build under MacOS will work the same way as on Linux. To get boost and ninja you can use [Homebrew](https://brew.sh/).
-
+The build under MacOS will work the same way as on Linux. To get boost and ninja you can use [Homebrew](https://brew.sh/):
 ```sh
-cmake -G Ninja <PATH_TO_FOUNDATIONDB_SOURCE>
+brew install llvm
+brew install lld
 ```
 
-To generate a installable package,
+Verify that the following paths are set:
+```sh
+export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+export LDFLAGS="-L/opt/homebrew/opt/llvm/lib" 
+export CPPFLAGS="-I/opt/homebrew/opt/llvm/include" 
+```
+
+```sh
+cmake -G Ninja \
+      -DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang \
+      -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++ \
+      -DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar \
+      -DCMAKE_RANLIB=/opt/homebrew/opt/llvm/bin/llvm-ranlib \
+      -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=/opt/homebrew/bin/ld64.lld" \
+      -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=/opt/homebrew/bin/ld64.lld" \
+<PATH_TO_FOUNDATIONDB_SOURCE>
+```
+
+To generate a installable package,first compile:
 
 ```sh
 ninja
+```
+Now generate the package:
+```sh
 $SRCDIR/packaging/osx/buildpkg.sh . $SRCDIR
 ```
 
