@@ -196,6 +196,23 @@ From the build directory, generate the package:
 $SRCDIR/packaging/osx/buildpkg.sh . $SRCDIR
 ```
 
+Prior to installing the newly compiled package, remove an existing FDB installation:
+```sh
+sudo /usr/local/foundationdb/uninstall-FoundationDB.sh
+```
+
+Remove its data and configuration files:
+```sh
+sudo rm -rf /usr/local/foundationdb /usr/local/etc/foundationdb
+```
+
+Use the finder to browse the directory that contains the newly generated package:
+```sh
+cd build/packages
+```
+
+Double click the FoundationDB package to install.
+
 ### Windows
 
 Under Windows, only Visual Studio with ClangCl is supported
