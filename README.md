@@ -186,7 +186,12 @@ cmake -G Ninja \
 ```
 
 
-Now generate the package:
+From the build directory, compile using the following command:
+```sh
+ninja
+```
+
+From the build directory, generate the package:
 ```sh
 $SRCDIR/packaging/osx/buildpkg.sh . $SRCDIR
 ```
