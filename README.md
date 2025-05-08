@@ -145,8 +145,30 @@ You should create a second build-directory which you will use for building and d
 
 
 ### CloudLab
-
-
+Create an instance with the latest versin of Ubuntu (24 as of May 8, 2024).  Bring it up to date:
+```
+sudo apt update
+```
+Install cmake on it.
+```
+sudo apt install cmake
+```
+Follow the FDB installation guide and verify the version of cmake is 3.13 or higher.
+Proceed to install the other required libraries and packages.
+```
+sudo apt install libjemalloc-dev
+sudo apt install libssl-dev
+sudo apt install liblz4-dev
+sudo apt install python3-sphinx
+```
+Create the build directory, change into that directory and run:
+```
+cmake ../foundationdb_cache
+```
+Now, build FDB:
+```
+ninja
+```
 
 ### Linux
 
