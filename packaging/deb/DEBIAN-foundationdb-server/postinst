@@ -45,7 +45,7 @@ if [ "$1" = configure ]; then
         update-rc.d foundationdb defaults
 
         if [ "$NEWDB" != "" ]; then
-            /usr/bin/fdbcli -C /etc/foundationdb/fdb.cluster --exec "configure new single memory; status" --timeout 20
+            /usr/bin/fdbcli -C /etc/foundationdb/fdb.cluster --exec "configure new single ssd; status" --timeout 20
         fi
     fi
 fi

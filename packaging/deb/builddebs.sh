@@ -19,6 +19,7 @@ mkdir -p -m 0755 $SERVERDIR/var/lib/foundationdb/data
 mkdir -p -m 0755 $SERVERDIR/usr/lib/foundationdb
 
 install -m 0664 packaging/foundationdb.conf $SERVERDIR/etc/foundationdb
+install -m 0664 packaging/storagetype.json $SERVERDIR/etc/foundationdb
 install -m 0755 packaging/deb/foundationdb-init $SERVERDIR/etc/init.d/foundationdb
 install -m 0755 bin/fdbserver $SERVERDIR/usr/sbin
 install -m 0755 bin/fdbmonitor $SERVERDIR/usr/lib/foundationdb
