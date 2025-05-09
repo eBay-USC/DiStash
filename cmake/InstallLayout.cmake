@@ -366,6 +366,9 @@ if(NOT WIN32)
   fdb_install(FILES ${CMAKE_SOURCE_DIR}/packaging/foundationdb.conf
     DESTINATION etc
     COMPONENT server)
+  fdb_install(FILES ${CMAKE_SOURCE_DIR}/packaging/storagetype.json
+    DESTINATION etc
+    COMPONENT server)
   install(FILES ${CMAKE_SOURCE_DIR}/packaging/make_public.py
     DESTINATION "usr/lib/foundationdb"
     COMPONENT server-deb)

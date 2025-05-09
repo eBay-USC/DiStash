@@ -17,9 +17,10 @@ then
     random_str=`LC_CTYPE=C tr -dc A-Za-z0-9 < /dev/urandom | head -c 8`
     echo $description:$random_str@127.0.0.1:4500 > /etc/foundationdb/fdb.cluster
     cp /usr/lib/foundationdb-@FDB_VERSION@@FDB_BUILDTIME_STRING@/etc/foundationdb/foundationdb.conf /etc/foundationdb/foundationdb.conf
+    cp /usr/lib/foundationdb-@FDB_VERSION@@FDB_BUILDTIME_STRING@/etc/foundationdb/storagetype.json /etc/foundationdb/storagetype.json
     chown -R foundationdb:foundationdb /etc/foundationdb
     chmod 775 /etc/foundationdb
     chmod 0664 /etc/foundationdb/fdb.cluster
     /etc/init.d/foundationdb start
-    /usr/bin/fdbcli -C /etc/foundationdb/fdb.cluster --exec "configure new single memory; status" --timeout 20
+    /usr/bin/fdbcli -C /etc/foundationdb/fdb.cluster --exec "configure new single ssd; status" --timeout 20
 fi
