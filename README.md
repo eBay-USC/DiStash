@@ -154,12 +154,30 @@ Install cmake on it.
 sudo apt install cmake
 ```
 Follow the FDB installation guide and verify the version of cmake is 3.13 or higher.
-Proceed to install the other required libraries and packages.
+
+Proceed to install the other required libraries and packages.  Install Ninja:
+```
+sudo apt-get install ninja-build
+```
+Install jemalloc:
 ```
 sudo apt install libjemalloc-dev
+```
+Install ssl:
+```
 sudo apt install libssl-dev
+```
+Install compression technique lz4:
+```
 sudo apt install liblz4-dev
+```
+Install compression technique python sphinx:
+```
 sudo apt install python3-sphinx
+```
+Install mono by following instructions at :
+```
+https://www.mono-project.com/download/stable/#dwonload-lin
 ```
 Create the build directory, change into that directory and run:
 ```
