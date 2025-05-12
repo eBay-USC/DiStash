@@ -181,7 +181,7 @@ https://www.mono-project.com/download/stable/#dwonload-lin
 ```
 Create the build directory, change into that directory and run:
 ```
-cmake ../foundationdb_cache
+cmake -G Ninja ../foundationdb_cache
 ```
 Now, build FDB:
 ```
