@@ -189,16 +189,7 @@ ninja
 ```
 
 ### eBay Data Center
-Create a CloudLab instance with Ubuntu 20.  Bring it up to date:
-```
-sudo apt update
-```
-Make sure it has more than 16 GB of storage by following instructions available at https://docs.cloudlab.us/advanced-storage.html:
-```
-mkdir mydata
-sudo /usr/local/etc/emulab/mkextrafs.pl /users/shahram/mydata/
-```
-Install cmake on it.
+See https://github.com/eBay-USC/fdb_deploy/tree/fdb_cache2 and follow its instructions.
 
 ### Linux
 
