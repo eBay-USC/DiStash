@@ -1,6 +1,6 @@
 # DiStash
 
-DiStash is a disaggregated transactional key-value store for data across pools of different storage medium such as Dynamic Random Access Memory (DRAM), Solid State Disk (SSD), Hard Disk Drive (HDD), or Non-Volatile Memory (NVM).  An application may configure a storage pool as either ephemeral or durable.  DiStash simplifies the application logic by preventing undesirable race conditions that may cause copies of data across different pools of storage to diverge.
+DiStash is a disaggregated transactional key-value store for data across pools of different storage medium such as Dynamic Random Access Memory (DRAM), Solid State Disk (SSD), Hard Disk Drive (HDD), or Non-Volatile Memory (NVM).  An application may configure a storage pool as either durable or ephemeral (transient cache).  DiStash simplifies the application logic by preventing undesirable race conditions that may cause copies of data across different pools of storage to diverge.
 
 DiStash is built using FoundationDB.  To learn more about FoundationDB, visit [foundationdb.org](https://www.foundationdb.org/)
 
