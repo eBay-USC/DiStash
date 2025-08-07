@@ -8,19 +8,18 @@ Authors:  Yiming Gao (gaoyimin@usc.edu), Hieu Nguyen (hieunguyen@ebay.com), and 
 
 ## Features
 
-* Support for h pools of stashes.  A stash is a storage medium such as Dynamic Random Access Memory (DRAM), Solid State Disk (SSD), Hard Disk Drive (HDD), or Non-Volatile Memory (NVM).
+DiStash is a research prototype that supports:
+
+* Pools of stashes.  A stash is a storage medium such as Dynamic Random Access Memory (DRAM), Solid State Disk (SSD), Hard Disk Drive (HDD), or Non-Volatile Memory (NVM).
 * A single transaction to read and write different copies of one or more key-value pair across the different pools of stashes.
+* Pools of stashes as either ephemeral (cache) or durable storage.  In ephemeral mode, once the storage capacity of a stash is exhausted, DiStash uses LRU to evict data.
+* DiStash may be used to implement cache augmented data stores, front-end load balancing, and hierarchical storage structures.
 
 ## Getting Started
 
 ### Compiling from source
 
-Developers on an OS for which there is no binary package, or who would like
-to start hacking on the code, can get started by compiling from source.
-
-The official docker image for building is [`foundationdb/build`](https://hub.docker.com/r/foundationdb/build) which has all dependencies installed. The Docker image definitions used by FoundationDB team members can be found in the [dedicated repository.](https://github.com/FoundationDB/fdb-build-support).
-
-To build outside the official docker image you'll need at least these dependencies:
+A build of DiStash requires at least these dependencies:
 
 1. Install cmake Version 3.13 or higher [CMake](https://cmake.org/), on a MacBook Pro: `brew install cmake`
 1. Install [Mono](https://www.mono-project.com/download/stable/), on a MacBook Pro: download pkg file and install
@@ -248,19 +247,23 @@ cd build/packages
 
 Double click the FoundationDB package to install.
 
-### Windows
+## Citations
 
-Under Windows, only Visual Studio with ClangCl is supported
+Y. Gao, H. Nguyen, J. Li, and S. Ghandeharizadeh.  DiStash: A Disaggregated Multi-Stash Transactional Key-Value Store.  In the Seventeenth TPC Technology Conference on Performance Evaluation \& Benchmarking, co-located with VLDB 2025, London, UK, September 1, 2025.
 
-1. Install Visual Studio 2019 (IDE or Build Tools), and enable llvm support
-1. Install  [CMake 3.15](https://cmake.org/) or higher
-1. Download [Boost 1.77.0](https://boostorg.jfrog.io/artifactory/main/release/1.77.0/source/boost_1_77_0.7z)
-1. Unpack boost to C:\boost, or use `-DBOOST_ROOT=<PATH_TO_BOOST>` with `cmake` if unpacked elsewhere
-1. Install [Python](https://www.python.org/downloads/) if is not already installed by Visual Studio
-1. (Optional) Install [OpenJDK 11](https://developers.redhat.com/products/openjdk/download) to build Java bindings
-1. (Optional) Install [OpenSSL 3.x](https://slproweb.com/products/Win32OpenSSL.html) to build with TLS support
-1. (Optional) Install [WIX Toolset](https://wixtoolset.org/) to build Windows installer
-1. `mkdir build && cd build`
-1. `cmake -G "Visual Studio 16 2019" -A x64 -T ClangCl <PATH_TO_FOUNDATIONDB_SOURCE>`
-1. `msbuild /p:Configuration=Release foundationdb.sln`
-1. To increase build performance, use `/p:UseMultiToolTask=true` and `/p:CL_MPCount=<NUMBER_OF_PARALLEL_JOBS>` 
+
+
+BibTex:
+
+```
+@inproceedings{distash2025, 
+author = {Gao, Yiming and Nguyen, Hieu and Li, Jun and Ghandeharizadeh, Shahram}, 
+title = {DiStash: A Disaggregated Multi-Stash Transactional Key-Value Store}, 
+year = {2025}, 
+doi = {10.1145/3664647.3681080}, 
+abstract = {A stash is a storage medium such as Dynamic Random Access Memory (DRAM), Solid State Disk (SSD), Hard Disk Drive (HDD), or Non-Volatile Memory (NVM).  This paper presents a disaggregated transactional key-value (KV) store, DiStash, that governs KVs cross pools of stash types.  It enables an application to use a single transaction to read and write different copies of one or more key-value pair across the different pools of stashes.  It simplifies the application logic by (a) preventing undesirable race conditions that may cause copies of data across different stash pools to reflect different values and/or (b) failures that may result in loss of key-value pairs. A configuration of DiStash may use a pool of stashes as either ephemeral or durable storage.  The application dictates whether the content of its participating stashes are inclusive (replicated) or exclusive (tiered).  We implement a DiStash by extending FoundationDB.  We quantify the tradeoffs with its design decisions using microbenchmarks and eBay’s production workload.}, 
+booktitle = {Proceedings of the Seventeenth TPC Technology Conference on Performance Evaluation \& Benchmarking}, 
+location = {London, England}, 
+series = {TPCTC '25} 
+}
+```
