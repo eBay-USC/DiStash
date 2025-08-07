@@ -1,4 +1,4 @@
-<img alt="FoundationDB logo" src="documentation/FDB_logo.png?raw=true" width="400">
+DiStash is a disaggregated transactional key-value store for data across pools of different storage medium such as Dynamic Random Access Memory (DRAM), Solid State Disk (SSD), Hard Disk Drive (HDD), or Non-Volatile Memory (NVM).  An application may configure a storage pool as either ephemeral or durable.  DiStash simplifies the application logic by preventing undesirable race conditions that may cause copies of data across different pools of storage to diverge.
 
 ![Build Status](https://codebuild.us-west-2.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiVjVzb1RQNUZTaGxGNm9iUnk4OUZ1d09GdTMzZnVOT1YzaUU1RU1xR2o2TENRWFZjb3ZrTHJEcngrZVdnNE40bXJJVDErOGVwendIL3lFWFY3Y3oxQmdjPSIsIml2UGFyYW1ldGVyU3BlYyI6IlJUbWhnaUlJVXRORUNJTjQiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
 
