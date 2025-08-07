@@ -4,7 +4,7 @@ DiStash is a disaggregated transactional key-value store for data across pools o
 
 DiStash is built using FoundationDB.  To learn more about FoundationDB, visit [foundationdb.org](https://www.foundationdb.org/)
 
-Authors:  Yiming Gao (gaoyimin@usc.edu), Hieu Nguyen (hieunguyen@ebay.com), and Shahram Ghandeharizadeh (shahram@usc.edu)
+Authors:  Yiming Gao (gaoyimin@usc.edu), Hieu Nguyen (hieunguyen@ebay.com), Jun Li (junli5@ebay.com), and Shahram Ghandeharizadeh (shahram@usc.edu)
 
 ## Features
 
